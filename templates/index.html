@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZIMRA Virtual Fiscal Device Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .response-box {
+            background: #212529;
+            color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-size: 0.85rem;
+            white-space: pre-wrap;
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        .tab-content {
+            padding-top: 20px;
+        }
+
+        .card {
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            border: none;
+        }
+
+        .zimra-summary {
+            background-color: #e2e3e5;
+            border-left: 5px solid #0d6efd;
+        }
+
+        #scan-log {
+            height: 400px;
+        }
+
+        .nav-tabs .nav-link.active {
+            font-weight: bold;
+            color: #0d6efd;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container mt-4 mb-5">
+        <h2 class="mb-4 text-primary">ZIMRA FDMS Virtual Device Dashboard</h2>
+
+        <ul class="nav nav-tabs" id="myTab" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="status-tab" data-bs-toggle="tab" data-bs-target="#status"
+                    type="button">1. Device Status</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="open-tab" data-bs-toggle="tab" data-bs-target="#open" type="button">2. Open
+                    Day</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="invoice-tab" data-bs-toggle="tab" data-bs-target="#invoice"
+                    type="button">3. Submit Invoice</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="credit-tab" data-bs-toggle="tab" data-bs-target="#credit" type="button">4.
+                    Submit Credit Note</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="close-tab" data-bs-toggle="tab" data-bs-target="#close" type="button">5.
+                    Close Day</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="scanner-tab" data-bs-toggle="tab" data-bs-target="#scanner"
+                    type="button">6. Folder Scanner</button>
+            </li>
+        </ul>
+
+        <div class="tab-content card p-4" id="myTabContent">
+            <!-- 1. Status Tab -->
+            <div class="tab-pane fade show active" id="status" role="tabpanel">
+                <h5>Check Fiscal Day Status</h5>
+                <button class="btn btn-primary" onclick="callApi('/api/status', {}, 'status-response')">Check
+                    Status</button>
+                <pre id="status-response" class="response-box mt-3">Response will appear here...</pre>
+            </div>
+
+            <!-- 2. Open Day Tab -->
+            <div class="tab-pane fade" id="open" role="tabpanel">
+                <h5>Open New Fiscal Day</h5>
+                <div class="mb-3">
+                    <label class="form-label">Fiscal Day No (Optional)</label>
+                    <input type="number" class="form-control" id="open-day-no" placeholder="Auto-generated if blank">
+                </div>
+                <button class="btn btn-success" onclick="openDay()">Open Fiscal Day</button>
+                <pre id="open-response" class="response-box mt-3">Response will appear here...</pre>
+            </div>
+
+            <!-- 3. Invoice Tab -->
+            <div class="tab-pane fade" id="invoice" role="tabpanel">
+                <h5>Submit Fiscal Invoice (15.5% VAT)</h5>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Invoice No</label>
+                        <input type="text" class="form-control" id="inv-no" value="INV-TEST-001">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Total Amount (Tax Inclusive)</label>
+                        <input type="number" step="0.01" class="form-control" id="inv-total" value="1155.00">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Tax % (Default 15.5%)</label>
+                        <input type="number" step="0.01" class="form-control" id="inv-tax" value="15.50">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Buyer Name</label>
+                        <input type="text" class="form-control" id="inv-buyer" value="Test Buyer">
+                    </div>
+                </div>
+                <button class="btn btn-primary btn-lg" onclick="submitAndPrint('FiscalInvoice')">Submit to
+                    ZIMRA</button>
+
+                <div id="zimra-summary-invoice" class="zimra-summary card mt-3 p-3" style="display:none;">
+                    <h5 class="text-primary">ZIMRA FDMS Response Details</h5>
+                    <div class="row">
+                        <div class="col-md-6"><strong>Receipt ID:</strong> <span id="zimra-receipt-id-inv"></span></div>
+                        <div class="col-md-6"><strong>Verification Code:</strong> <span id="zimra-ver-code-inv"
+                                class="text-success fw-bold"></span></div>
+                    </div>
+                    <hr>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <a id="zimra-validate-link-inv" href="#" target="_blank" class="btn btn-success">Validate
+                            Receipt on ZIMRA Portal</a>
+                        <button onclick="downloadPdf('inv')" class="btn btn-dark">Download A4 PDF with QR Code</button>
+                    </div>
+                </div>
+                <pre id="invoice-response" class="response-box mt-3">Raw JSON response will appear here...</pre>
+            </div>
+
+            <!-- 4. Credit Note Tab -->
+            <div class="tab-pane fade" id="credit" role="tabpanel">
+                <h5>Submit Credit Note (15.5% VAT)</h5>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Credit Note No</label>
+                        <input type="text" class="form-control" id="cn-no" value="CN-TEST-001">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Original Invoice No</label>
+                        <input type="text" class="form-control" id="cn-orig" value="INV-TEST-001">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Total Amount (Will be made negative)</label>
+                        <input type="number" step="0.01" class="form-control" id="cn-total" value="1155.00">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Original Global No</label>
+                        <input type="number" class="form-control" id="cn-orig-global" value="1">
+                    </div>
+                </div>
+                <button class="btn btn-warning btn-lg" onclick="submitAndPrint('CreditNote')">Submit to ZIMRA</button>
+
+                <div id="zimra-summary-credit" class="zimra-summary card mt-3 p-3" style="display:none;">
+                    <h5 class="text-primary">ZIMRA FDMS Response Details</h5>
+                    <div class="row">
+                        <div class="col-md-6"><strong>Receipt ID:</strong> <span id="zimra-receipt-id-cn"></span></div>
+                        <div class="col-md-6"><strong>Verification Code:</strong> <span id="zimra-ver-code-cn"
+                                class="text-success fw-bold"></span></div>
+                    </div>
+                    <hr>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <a id="zimra-validate-link-cn" href="#" target="_blank" class="btn btn-success">Validate Receipt
+                            on ZIMRA Portal</a>
+                        <button onclick="downloadPdf('cn')" class="btn btn-dark">Download A4 PDF with QR Code</button>
+                    </div>
+                </div>
+                <pre id="credit-response" class="response-box mt-3">Raw JSON response will appear here...</pre>
+            </div>
+
+            <!-- 5. Close Day Tab -->
+            <div class="tab-pane fade" id="close" role="tabpanel">
+                <h5>Close Fiscal Day (Z Report)</h5>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Fiscal Day No</label>
+                        <input type="number" class="form-control" id="close-day-no" value="1">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Last Receipt Counter</label>
+                        <input type="number" class="form-control" id="close-counter" value="1">
+                    </div>
+                </div>
+                <button class="btn btn-danger" onclick="closeDay()">Close Fiscal Day</button>
+                <pre id="close-response" class="response-box mt-3">Response will appear here...</pre>
+            </div>
+
+            <!-- 6. Folder Scanner Tab -->
+            <div class="tab-pane fade" id="scanner" role="tabpanel">
+                <h5>Automatic Folder Scanning</h5>
+                <p class="text-muted">Continuously monitors a folder for new receipt text files, validates them,
+                    processes them, and moves them to <code>Processed</code> or <code>Failed</code> subfolders.</p>
+                <div class="row mb-3">
+                    <div class="col-md-8">
+                        <label class="form-label">Folder Path to Monitor</label>
+                        <input type="text" class="form-control" id="scan-folder-path" value="C:\Receipt">
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end gap-2">
+                        <button class="btn btn-success flex-grow-1" id="btn-start-scan" onclick="toggleScan(true)">Start
+                            Scanning</button>
+                        <button class="btn btn-danger flex-grow-1" id="btn-stop-scan" onclick="toggleScan(false)"
+                            disabled>Stop Scanning</button>
+                    </div>
+                </div>
+                <div class="alert alert-info" id="scan-status-alert">Status: Stopped</div>
+                <pre id="scan-log" class="response-box">Waiting to start...</pre>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        window.lastReceiptData = { inv: null, cn: null };
+        let scanInterval;
+
+        // Generic API caller for simple endpoints
+        function callApi(url, data, responseId) {
+            document.getElementById(responseId).innerText = "Loading...";
+            fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            })
+                .then(async res => {
+                    const text = await res.text();
+                    try {
+                        return JSON.parse(text);
+                    } catch (e) {
+                        throw new Error(`Server returned non-JSON response (Check Flask Console): ${text.substring(0, 200)}`);
+                    }
+                })
+                .then(data => {
+                    document.getElementById(responseId).innerText = JSON.stringify(data, null, 2);
+                })
+                .catch(err => {
+                    document.getElementById(responseId).innerText = "Error: " + err.message;
+                });
+        }
+
+        function openDay() {
+            const dayNo = document.getElementById('open-day-no').value;
+            callApi('/api/open_day', { fiscalDayNo: dayNo ? parseInt(dayNo) : null }, 'open-response');
+        }
+
+        function submitAndPrint(type) {
+            let data = {}, responseId = '', summaryId = '', suffix = '';
+
+            if (type === 'FiscalInvoice') {
+                responseId = 'invoice-response';
+                summaryId = 'zimra-summary-invoice';
+                suffix = 'inv';
+                data = {
+                    receiptType: 'FiscalInvoice',
+                    invoiceNo: document.getElementById('inv-no').value,
+                    receiptTotal: parseFloat(document.getElementById('inv-total').value),
+                    taxPercent: parseFloat(document.getElementById('inv-tax').value),
+                    buyerName: document.getElementById('inv-buyer').value,
+                    buyerTIN: '2000457810',
+                    itemName: 'Z Book 14inch'
+                };
+            } else {
+                responseId = 'credit-response';
+                summaryId = 'zimra-summary-credit';
+                suffix = 'cn';
+                data = {
+                    receiptType: 'CreditNote',
+                    invoiceNo: document.getElementById('cn-no').value,
+                    originalInvoiceNo: document.getElementById('cn-orig').value,
+                    receiptTotal: parseFloat(document.getElementById('cn-total').value),
+                    taxPercent: 15.50,
+                    originalGlobalNo: parseInt(document.getElementById('cn-orig-global').value),
+                    buyerName: 'Test Buyer',
+                    buyerTIN: '2000457810',
+                    itemName: 'Z Book 14inch (Return)'
+                };
+            }
+
+            document.getElementById(responseId).innerText = "Submitting to ZIMRA...";
+            document.getElementById(summaryId).style.display = 'none';
+
+            // FIXED: Safely parse JSON to prevent "Unexpected token '<'" errors
+            fetch('/api/submit_receipt', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            })
+                .then(async res => {
+                    const text = await res.text();
+                    try {
+                        return JSON.parse(text);
+                    } catch (e) {
+                        throw new Error(`Server returned non-JSON response (Check Flask Console): ${text.substring(0, 200)}`);
+                    }
+                })
+                .then(result => {
+                    document.getElementById(responseId).innerText = JSON.stringify(result, null, 2);
+
+                    if (result.Code === "1") {
+                        let rawResp = result.ZimraRawResponse || {};
+                        document.getElementById(`zimra-receipt-id-${suffix}`).innerText = rawResp.receiptID || 'N/A';
+                        document.getElementById(`zimra-ver-code-${suffix}`).innerText = result.VerificationCode || 'N/A';
+                        document.getElementById(`zimra-validate-link-${suffix}`).href = result.QRcode;
+                        document.getElementById(summaryId).style.display = 'block';
+
+                        window.lastReceiptData[suffix] = {
+                            receipt_data: result.Data,
+                            verification_code: result.VerificationCode,
+                            qr_code: result.QRcode,
+                            invoice_no: data.invoiceNo
+                        };
+                    }
+                })
+                .catch(err => {
+                    document.getElementById(responseId).innerText = "Error: " + err.message;
+                });
+        }
+
+        function downloadPdf(suffix) {
+            let pdfData = window.lastReceiptData[suffix];
+            if (!pdfData) { alert("No receipt data available."); return; }
+
+            fetch('/api/print_pdf', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(pdfData)
+            })
+                .then(pdfRes => pdfRes.blob())
+                .then(blob => {
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `ZIMRA_${pdfData.invoice_no}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                })
+                .catch(err => alert("PDF Download Error: " + err.message));
+        }
+
+        function closeDay() {
+            const data = {
+                fiscalDayNo: parseInt(document.getElementById('close-day-no').value),
+                receiptCounter: parseInt(document.getElementById('close-counter').value),
+                fiscalCounters: [] // Backend calculates this automatically
+            };
+            callApi('/api/close_day', data, 'close-response');
+        }
+
+        // --- FOLDER SCANNER LOGIC ---
+        function toggleScan(start) {
+            const url = start ? '/api/start_scanning' : '/api/stop_scanning';
+            const folderPath = document.getElementById('scan-folder-path').value;
+            const payload = start ? { folder_path: folderPath } : {};
+
+            fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+                .then(res => res.json())
+                .then(data => {
+                    if (start) {
+                        document.getElementById('btn-start-scan').disabled = true;
+                        document.getElementById('btn-stop-scan').disabled = false;
+                        document.getElementById('scan-status-alert').innerText = "Status: Running... (Polling every 2s)";
+                        document.getElementById('scan-status-alert').className = "alert alert-success";
+                        document.getElementById('scan-log').innerText = "Initializing scanner...\n";
+                        scanInterval = setInterval(updateScanLog, 2000);
+                    } else {
+                        document.getElementById('btn-start-scan').disabled = false;
+                        document.getElementById('btn-stop-scan').disabled = true;
+                        document.getElementById('scan-status-alert').innerText = "Status: Stopped";
+                        document.getElementById('scan-status-alert').className = "alert alert-danger";
+                        clearInterval(scanInterval);
+                        updateScanLog();
+                    }
+                })
+                .catch(err => alert("Scanner Error: " + err.message));
+        }
+
+        function updateScanLog() {
+            fetch('/api/scanner_status')
+                .then(res => res.json())
+                .then(data => {
+                    const logBox = document.getElementById('scan-log');
+                    logBox.innerText = data.log.join('\n');
+                    logBox.scrollTop = logBox.scrollHeight;
+                });
+        }
+    </script>
+</body>
+
+</html>

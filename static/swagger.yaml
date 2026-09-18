@@ -1,0 +1,33 @@
+openapi: 3.0.0
+info:
+  title: ZIMRA Fiscal Device Gateway API
+  description: API for interfacing with ZIMRA FDMS for fiscal receipts, credit notes, and device management.
+  version: 1.0.0
+servers:
+  - url: http://localhost:5000
+paths:
+  /api/external/submit_receipt:
+    post:
+      summary: External API for 3rd Party Integration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                receipt:
+                  type: object
+                  properties:
+                    receiptType: { type: string, enum: [FiscalInvoice, CreditNote, DebitNote] }
+                    receiptCurrency: { type: string, example: "USD" }
+                    invoiceNo: { type: string }
+                    receiptDate: { type: string, format: date-time }
+                    receiptTotal: { type: number }
+                    creditDebitNote:
+                      type: object
+                      properties:
+                        originalInvoiceNo: { type: string }
+                        receiptGlobalNo: { type: integer }
+      responses:
+        200: { description: Receipt submitted to ZIMRA }

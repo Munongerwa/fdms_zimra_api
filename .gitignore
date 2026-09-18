@@ -1,0 +1,36 @@
+# Local Python environments
+myenv/
+venv/
+Lib/
+Include/
+Scripts/
+share/
+etc/
+pyvenv.cfg
+
+# Generated databases and local state
+fiscal.db
+*.sqlite3
+*.db
+
+# Credentials and certificates
+certs/
+*.pem
+*.key
+
+# Python and tool caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Build and packaging output
+build/
+dist/
+*.spec.bak
+
+# Runtime and generated application output
+logs/
+Generated_PDFs/
+*.log
+fiscalink_log.txt

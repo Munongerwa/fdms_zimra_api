@@ -1,0 +1,108 @@
+# -*- mode: python ; coding: utf-8 -*-
+
+block_cipher = None
+
+a = Analysis(
+    ['tray_app.py'],
+    pathex=[],
+    binaries=[],
+    datas=[
+        ('app.py', '.'),
+        ('dashboard.py', '.'),
+        ('config.py', '.'),
+        ('core', 'core'),
+        ('assets', 'assets'),
+        ('data', 'data'),
+    ],
+    hiddenimports=[
+        'app',
+        'dashboard',
+        'config',
+        'core.zimra_client',
+        'core.pdf_generator',
+        'core.receipt_parser',
+        'core.pdf_stamper',
+        'core.zimra_validator',
+        
+        # PDF & Image Dependencies
+        'pdfplumber',
+        'fitz',
+        'PyMuPDF',
+        'reportlab',
+        'reportlab.lib',
+        'reportlab.lib.pagesizes',
+        'reportlab.lib.units',
+        'reportlab.lib.styles',
+        'reportlab.lib.enums',
+        'reportlab.lib.colors',
+        'reportlab.platypus',
+        'reportlab.platypus.frames',
+        'reportlab.platypus.doctemplate',
+        'reportlab.pdfbase',
+        'reportlab.pdfbase.cidfonts',
+        'reportlab.pdfbase.ttfonts',
+        'reportlab.pdfbase.pdfmetrics',
+        'qrcode',
+        'PIL',
+        'PIL.Image',
+        'PIL.ImageDraw',
+        
+        # Crypto & API Dependencies
+        'cryptography',
+        'cryptography.hazmat.backends.openssl',
+        'cryptography.hazmat.primitives',
+        'cryptography.hazmat.primitives.asymmetric',
+        'cryptography.hazmat.primitives.asymmetric.ec',
+        'cryptography.hazmat.primitives.asymmetric.padding',
+        'cryptography.hazmat.primitives.hashes',
+        'cryptography.hazmat.primitives.serialization',
+        'requests',
+        'flasgger',
+        
+        # Dash & UI Dependencies
+        'dash',
+        'dash_bootstrap_components',
+        'plotly',
+        'pystray',
+        'plyer',
+        'engineio.async_drivers.threading',
+        'simplejson',
+        'sqlite3',
+        'shutil',
+        'threading',
+        'subprocess',
+    ],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=['matplotlib', 'scipy', 'numpy', 'pandas', 'tkinter', 'test', 'tests'],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    [],
+    name='FISCALINK',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=True, # Set to False if you want to hide the console window completely
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon='assets/logo.png',
+)

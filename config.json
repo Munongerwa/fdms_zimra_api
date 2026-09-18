@@ -1,0 +1,7 @@
+{
+  "device_id": 38363,
+  "device_serial_number": "TEST-087",
+  "cert_path": "C:\\certs",
+  "zimra_api_url": "https://fdmsapitest.zimra.co.zw",
+  "qr_base_url": "https://fdmstest.zimra.co.zw/"
+}
