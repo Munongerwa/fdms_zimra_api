@@ -215,13 +215,16 @@ def get_scanner_page():
                         
                         html.Label("Receipt Template:", className="fw-bold mb-1"),
                         dbc.Select(id="scanner-template", options=[
+                            {"label": "Melivo POS (Default)", "value": "melivo"},
+                            {"label": "FEEDMIX POS", "value": "feedmix"},
+                            {"label": "QuickBooks POS", "value": "quickbooks"},
                             {"label": "AIBES (PDF Only)", "value": "aibes"}
-                        ], value="aibes", className="mb-3"),
+                        ], value="feedmix", className="mb-3"),
                         html.Label("Default Print Format:", className="fw-bold mb-1"),
                         dbc.Select(id="scanner-print-format", options=[
                             {"label": "A4 Invoice (InvoiceA4)", "value": "InvoiceA4"},
                             {"label": "80mm Thermal Receipt (Receipt48)", "value": "Receipt48"}
-                        ], value="InvoiceA4", className="mb-3"),
+                        ], value="Receipt48", className="mb-3"),
                         
                         dbc.Checklist(
                             options=[{"label": " Process PDF Files (Extract, Fiscalize & Stamp QR)", "value": "pdfs"}],
@@ -269,9 +272,10 @@ def load_scanner_settings(pathname):
             res = requests.get(f"{API_BASE}/api/scanner_settings", timeout=2)
             data = res.json()
             pdf_val = ["pdfs"] if data.get("process_pdfs", False) else []
-            return data.get("folder_path", r"C:\Receipt"), data.get("template", "aibes"), data.get("print_format", "InvoiceA4"), pdf_val
+            # Updated fallbacks to default to Feedmix and Receipt48
+            return data.get("folder_path", r"C:\Receipt"), data.get("template", "feedmix"), data.get("print_format", "Receipt48"), pdf_val
         except:
-            return r"C:\Receipt", "aibes", "InvoiceA4", []
+            return r"C:\Receipt", "feedmix", "Receipt48", []
     return dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
 @callback(Output("scanner-status-display", "children"), [Input("btn-start-scanner", "n_clicks"), Input("btn-stop-scanner", "n_clicks")], [State("scanner-folder-path", "value"), State("scanner-template", "value"), State("scanner-print-format", "value"), State("scanner-process-pdfs", "value")], prevent_initial_call=True)

@@ -1,5 +1,7 @@
 import re
 from datetime import datetime
+import pdfplumber
+import os
 
 def read_file_smart(file_path):
     """Reads the receipt file with multiple encoding fallbacks."""
@@ -633,3 +635,170 @@ def build_zimra_payload(parsed_data, device_id=None, receipt_counter=1, receipt_
         }
         
     return payload
+
+def clean_pdf_duplication(text):
+    """Removes exact duplicate phrases or lines caused by PDF text extraction artifacts."""
+    if not text:
+        return ""
+    
+    lines = text.split('\n')
+    cleaned_lines = []
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        parts = line.split()
+        # If the line has an even number of words and the first half equals the second half
+        if len(parts) >= 2 and len(parts) % 2 == 0:
+            mid = len(parts) // 2
+            if parts[:mid] == parts[mid:]:
+                line = " ".join(parts[:mid])
+                
+        cleaned_lines.append(line)
+    
+    # Remove consecutive duplicate lines
+    final_lines = []
+    for line in cleaned_lines:
+        if not final_lines or final_lines[-1] != line:
+            final_lines.append(line)
+            
+    return "\n".join(final_lines).strip()
+
+def split_name_and_address(full_text):
+    """Splits a combined string into Name and Address based on typical address patterns."""
+    if not full_text:
+        return "", ""
+    # Look for the first occurrence of a number followed by a slash or space (e.g., "4/119 Lomagundi")
+    match = re.search(r'\s+(\d+[/\d]+\s+[A-Za-z]+.*)', full_text)
+    if match:
+        return full_text[:match.start()].strip(), match.group(1).strip()
+    # Fallback: if no number, check for newlines
+    if '\n' in full_text:
+        lines = full_text.split('\n')
+        return lines[0].strip(), '\n'.join(lines[1:]).strip()
+    return full_text, ""
+
+def parse_feedmix_pdf_receipt(file_path):
+    """Parses a Feedmix PDF invoice with the specific NO. HS CODE DESCRIPTION... layout."""
+    text = ""
+    with pdfplumber.open(file_path) as pdf:
+        for page in pdf.pages:
+            text += page.extract_text() + "\n"
+            
+    feedmix_items = []
+    feedmix_pattern = re.compile(
+        r'^\s*(\d+)\s+(\d{8})\s+(.*?)\s+(\d+\.\d{2})\s+[A-Z]+\s+(\d+\.\d{2})\s+(\d+\.\d{2})%?\s+(\d+\.\d{2})\s+([\d,]+\.\d{2})', 
+        re.MULTILINE
+    )
+    
+    for match in feedmix_pattern.finditer(text):
+        hs_code = match.group(2)
+        description = match.group(3).strip()
+        qty = float(match.group(4))
+        price_incl = float(match.group(5))
+        tax_pct = float(match.group(6))  
+        vat_amnt = float(match.group(7))
+        total_incl = float(match.group(8).replace(',', ''))
+        
+        feedmix_items.append({
+            'code': hs_code,
+            'name': description,
+            'qty': qty,
+            'price': price_incl,
+            'total': total_incl,
+            'tax_pct': tax_pct,
+            'tax_code': 'A' if tax_pct > 0 else 'B'
+        })
+        
+    if not feedmix_items:
+        raise Exception("No items found in Feedmix PDF. Check layout.")
+        
+    # 1. Invoice Number extraction
+    inv_match = re.search(r'Document\s+NO[:\s]+([A-Z0-9\-]+)', text, re.IGNORECASE)
+    invoice_no = inv_match.group(1).strip() if inv_match else os.path.basename(file_path).replace('.pdf', '')
+    
+    date_iso = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        
+    curr_match = re.search(r'Currency:\s*([A-Z]+)', text)
+    currency = curr_match.group(1).strip() if curr_match else 'USD'
+    
+    # 2. FIX: Smart Buyer Name & Address Extraction with Robust Duplication Removal
+    name_match = re.search(r'CUSTOMER\s+NAME:\s*(.*?)(?:\n\s*CUSTOMER\s+(?:ADDRESS|TIN):)', text, re.IGNORECASE | re.DOTALL)
+    raw_name_block = name_match.group(1).strip() if name_match else ""
+    
+    addr_match = re.search(r'CUSTOMER\s+ADDRESS:\s*(.*?)(?:\n\s*CUSTOMER\s+TIN:)', text, re.IGNORECASE | re.DOTALL)
+    raw_addr_block = addr_match.group(1).strip() if addr_match else ""
+
+    # Clean duplications (e.g., "ABC ABC" -> "ABC", or duplicate lines)
+    clean_name_block = clean_pdf_duplication(raw_name_block)
+    clean_addr_block = clean_pdf_duplication(raw_addr_block)
+
+    buyer_name = ""
+    buyer_addr = ""
+
+    if clean_addr_block:
+        # If address is explicitly provided and not empty
+        buyer_addr = clean_addr_block
+        buyer_name = clean_name_block
+        # If the name block accidentally contains the address, strip it out
+        if buyer_addr in buyer_name:
+            buyer_name = buyer_name.replace(buyer_addr, "").strip()
+    else:
+        # Address is empty, derive from name block
+        buyer_name, buyer_addr = split_name_and_address(clean_name_block)
+
+    # SAFETY: ZIMRA API strictly limits the 'Street' field to 100 characters.
+    # Truncate if the deduplication still leaves it too long.
+    if len(buyer_addr) > 100:
+        buyer_addr = buyer_addr[:100]
+
+    buyer_tin_match = re.search(r'Customer\s+TIN:\s*(\d+)', text)
+    buyer_tin = buyer_tin_match.group(1).strip() if buyer_tin_match else ""
+    
+    buyer_vat_match = re.search(r'Customer\s+VAT\s*(\d+)', text)
+    buyer_vat = buyer_vat_match.group(1).strip() if buyer_vat_match else ""
+    
+    buyer_phone_match = re.search(r'Customer\s+Tel/Mobile\s*([\d\s]+)', text)
+    buyer_phone = buyer_phone_match.group(1).strip() if buyer_phone_match else ""
+    
+    buyer_email_match = re.search(r'Customer\s+Email\s*([\w\.-]+@[\w\.-]+)', text)
+    buyer_email = buyer_email_match.group(1).strip() if buyer_email_match else ""
+    
+    # Group taxes for ZIMRA payload
+    tax_groups = {}
+    for item in feedmix_items:
+        pct = item['tax_pct']
+        if pct not in tax_groups:
+            tax_groups[pct] = {'net': 0, 'vat': 0, 'total': 0}
+        net = item['total'] / (1 + pct/100) if pct > 0 else item['total']
+        vat = item['total'] - net
+        tax_groups[pct]['net'] += net
+        tax_groups[pct]['vat'] += vat
+        tax_groups[pct]['total'] += item['total']
+        
+    taxes = []
+    for pct, vals in tax_groups.items():
+        taxes.append({
+            'tax_code': 'A' if pct > 0 else 'B',
+            'tax_percent': pct,
+            'tax_amount': round(vals['vat'], 2),
+            'sales_amount_with_tax': round(vals['total'], 2)
+        })
+        
+    return {
+        'invoice_no': invoice_no,
+        'date': date_iso,
+        'currency': currency,
+        'buyer_name': buyer_name,
+        'buyer_tin': buyer_tin,
+        'buyer_vat': buyer_vat,
+        'buyer_address': buyer_addr,
+        'buyer_phone': buyer_phone,
+        'buyer_email': buyer_email,
+        'items': feedmix_items,
+        'taxes': taxes,
+        'receipt_type': 'FiscalInvoice',
+        'vat_exclusive': False
+    }

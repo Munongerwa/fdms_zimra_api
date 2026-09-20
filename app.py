@@ -166,11 +166,10 @@ def ensure_scanner_tables():
             cursor.execute("INSERT OR IGNORE INTO system_config (key, value) VALUES ('scanner_folder', 'C:\\Receipt')")
             cursor.execute("INSERT OR IGNORE INTO system_config (key, value) VALUES ('process_pdfs', 'True')")
             
-            # 4. Force AIBES as the absolute default template
-            cursor.execute("INSERT OR IGNORE INTO system_config (key, value) VALUES ('receipt_template', 'aibes')")
+            # 4. Insert default template ONLY if it doesn't exist yet
+            cursor.execute("INSERT OR IGNORE INTO system_config (key, value) VALUES ('receipt_template', 'feedmix')")
             
-            # 5. Auto-upgrade any old databases that might still say 'melivo'
-            cursor.execute("UPDATE system_config SET value = 'aibes' WHERE key = 'receipt_template' AND value = 'melivo'")
+            # (Removed the forced UPDATE to 'aibes' so the user's dropdown selection is respected)
             
             # 6. Create receipt_items table
             cursor.execute('''CREATE TABLE IF NOT EXISTS receipt_items (
@@ -240,8 +239,10 @@ def process_single_file(file_path, folder_path):
             if template.lower() == 'aibes':
                 from core.receipt_parser import parse_aibes_receipt
                 parsed_data = parse_aibes_receipt(file_path)
+            elif template.lower() == 'feedmix':
+                from core.receipt_parser import parse_feedmix_pdf_receipt
+                parsed_data = parse_feedmix_pdf_receipt(file_path)
             else:
-                # Feedmix or other PDF templates
                 from core.receipt_parser import parse_pdf_receipt
                 parsed_data = parse_pdf_receipt(file_path)
         else:
@@ -258,14 +259,7 @@ def process_single_file(file_path, folder_path):
             fiscal_day_no=state['fiscal_day_no']
         )
         
-        # ============================================================
-        # VALIDATION 1: Check Buyer Name (Optional)
-        # ============================================================
-        buyer_name = str(parsed_data.get('buyer_name', '')).strip()
-
-        # ============================================================
-        # VALIDATION 2: Duplicate Invoice Number
-        # ============================================================
+        # 2. VALIDATION: Duplicate Invoice Number
         invoice_no = str(parsed_data.get('invoice_no', '')).strip()
         if invoice_no:
             with db_lock:
@@ -278,11 +272,11 @@ def process_single_file(file_path, folder_path):
                         os.makedirs(move_to, exist_ok=True)
                         shutil.move(file_path, os.path.join(move_to, filename))
                         return f"[VALIDATION FAILED] {filename}"
-        # ============================================================
 
         full_payload = {"deviceID": int(zimra.device_id), "receipt": receipt_payload}
         full_payload['receipt']['receiptPrintForm'] = settings['print_format']
         
+        # 3. ZIMRA Payload Validation
         validation_errors = validate_zimra_payload(full_payload)
         if validation_errors:
             audit_data = {
@@ -295,16 +289,18 @@ def process_single_file(file_path, folder_path):
                 'zimra_response': json.dumps({"validation_errors": validation_errors}), 'status': 'FAILED'
             }
             zimra.log_receipt_audit(audit_data)
-            send_os_notification("️ Validation Failed", f"{filename}\n{', '.join(validation_errors)[:100]}")
+            send_os_notification("⚠️ Validation Failed", f"{filename}\n{', '.join(validation_errors)[:100]}")
             payload_str = json.dumps(full_payload, indent=2)
             log_msg = f"[VALIDATION FAILED] {filename} -> {', '.join(validation_errors)}\n\n--- GENERATED PAYLOAD ---\n{payload_str}\n-------------------------"
             log_to_db(log_msg, "FAILED")
             move_to = os.path.join(folder_path, 'Failed'); os.makedirs(move_to, exist_ok=True); shutil.move(file_path, os.path.join(move_to, filename))
             return f"[VALIDATION FAILED] {filename}"
             
+        # 4. Submit to ZIMRA
         status_code, zimra_response, ver_code, qr_code, hash_b64, receipt_audit_id = zimra.submit_receipt(full_payload)
         
         if status_code == 200:
+            # Log items to DB
             try:
                 zimra.log_receipt_items(
                     receipt_audit_id=receipt_audit_id,
@@ -316,6 +312,7 @@ def process_single_file(file_path, folder_path):
             except Exception as items_err:
                 print(f"Error storing items: {items_err}")
                 
+            # Get Seller Data for PDF generation/stamping
             try:
                 config_status, config_resp = zimra.get_config()
                 seller_data = {
@@ -324,20 +321,71 @@ def process_single_file(file_path, folder_path):
                     'tin': config_resp.get('taxPayerTIN', ''), 'vat': config_resp.get('vatNumber', ''),
                     'phone': config_resp.get('deviceBranchContacts', {}).get('phoneNo', ''), 'email': config_resp.get('deviceBranchContacts', {}).get('email', '')
                 }
+            except:
+                seller_data = {'name': 'FISCALINK', 'address': '', 'tin': '', 'vat': '', 'phone': '', 'email': ''}
+
+            # ============================================================
+            # 5. OUTPUT GENERATION & PRINTING
+            # ============================================================
+            if is_pdf:
+                print_format = settings.get('print_format', 'InvoiceA4')
                 
-                # ============================================================
-                # OUTPUT GENERATION: PDF vs TXT
-                # ============================================================
-                if is_pdf:
-                    # --- PDF: Stamp QR Code ---
-                    from core.pdf_stamper import stamp_qr_on_pdf
+                # --- FEEDMIX PDF + 80mm Thermal Format ---
+                if settings['template'].lower() == 'feedmix' and print_format != 'InvoiceA4':
+                    from core.pdf_generator import generate_80mm_thermal_receipt
+                    pdf_payload = {"receipt": full_payload['receipt'], "company_name": seller_data['name'], "seller_data": seller_data}
+                    serial_number = Config.DEVICE_SERIAL_NUMBER
+                    
+                    pdf_buffer = generate_80mm_thermal_receipt(
+                        pdf_payload, ver_code, qr_code, 
+                        zimra.device_id, state['fiscal_day_no'], 
+                        seller_data, serial_number
+                    )
+                    
+                    move_to = os.path.join(folder_path, 'Processed')
+                    os.makedirs(move_to, exist_ok=True)
+                    
+                    pdf_filename = f"80mm_{filename}"
+                    pdf_path = os.path.join(move_to, pdf_filename)
+                    with open(pdf_path, 'wb') as f: 
+                        f.write(pdf_buffer.getvalue())
+                    
+                    # Auto-print to default printer
+                    try:
+                        import time
+                        import win32api
+                        time.sleep(1.5)
+                        win32api.ShellExecute(0, "print", pdf_path, None, ".", 1)
+                        print(f"🖨️ Sent {pdf_filename} to default printer.")
+                    except Exception as print_err:
+                        print(f"⚠️ Could not auto-print: {print_err}")
+                        
+                    shutil.move(file_path, os.path.join(move_to, filename))
+                    send_os_notification("✅ 80mm Receipt Generated", f"{filename}\nCode: {ver_code}")
+                    log_to_db(f"[SUCCESS] {filename} | Code: {ver_code} | 80mm PDF Generated & Printed", "SUCCESS")
+
+                # --- STAMP PDF (AIBES or Feedmix with InvoiceA4) ---
+                else:
                     stamped_filename = filename.replace('.pdf', '_stamped.pdf')
                     stamped_path = os.path.join(folder_path, stamped_filename)
                     fiscal_day_no = state.get('fiscal_day_no', 'N/A')
                     device_id = zimra.device_id
                     receipt_global_no = state.get('receipt_global_no', 'N/A')
                     
-                    if stamp_qr_on_pdf(file_path, qr_code, stamped_path, fiscal_day_no, device_id, receipt_global_no, ver_code):
+                    if settings['template'].lower() == 'feedmix':
+                        from core.pdf_stamper import stamp_qr_on_pdf_feedmix
+                        stamp_success = stamp_qr_on_pdf_feedmix(
+                            file_path, qr_code, stamped_path, 
+                            fiscal_day_no, device_id, receipt_global_no, ver_code
+                        )
+                    else:
+                        from core.pdf_stamper import stamp_qr_on_pdf
+                        stamp_success = stamp_qr_on_pdf(
+                            file_path, qr_code, stamped_path, 
+                            fiscal_day_no, device_id, receipt_global_no, ver_code
+                        )
+
+                    if stamp_success:
                         move_to = os.path.join(folder_path, 'Processed')
                         os.makedirs(move_to, exist_ok=True)
                         shutil.move(stamped_path, os.path.join(move_to, stamped_filename))
@@ -350,38 +398,45 @@ def process_single_file(file_path, folder_path):
                         shutil.move(file_path, os.path.join(move_to, filename))
                         send_os_notification("⚠️ Stamp Failed", f"{filename} was fiscalized but stamping failed.")
                         log_to_db(f"[WARNING] {filename} | Code: {ver_code} | Moved (Stamp Failed)", "WARNING")
-                else:
-                    # --- TXT: Generate 80mm Receipt PDF ---
-                    from core.pdf_generator import generate_80mm_thermal_receipt
-                    pdf_payload = {"receipt": full_payload['receipt'], "company_name": seller_data['name'], "seller_data": seller_data}
-                    serial_number = Config.DEVICE_SERIAL_NUMBER
-                    
-                    # Use the new 80mm thermal receipt generator
-                    pdf_buffer = generate_80mm_thermal_receipt(
-                        pdf_payload, ver_code, qr_code, 
-                        zimra.device_id, state['fiscal_day_no'], 
-                        state['receipt_global_no'], seller_data, serial_number
-                    )
-                    
-                    # Save the 80mm PDF in the Processed folder
-                    move_to = os.path.join(folder_path, 'Processed')
-                    os.makedirs(move_to, exist_ok=True)
-                    
-                    pdf_filename = f"Receipt_{filename.replace('.txt', '.pdf')}"
-                    pdf_path = os.path.join(move_to, pdf_filename)
-                    with open(pdf_path, 'wb') as f: 
-                        f.write(pdf_buffer.getvalue())
-                    
-                    # Move the original TXT to Processed as well
-                    shutil.move(file_path, os.path.join(move_to, filename))
-                    
-                    send_os_notification("✅ 80mm Receipt Generated", f"{filename}\nCode: {ver_code}")
-                    log_to_db(f"[SUCCESS] {filename} | Code: {ver_code} | 80mm PDF Generated & Saved", "SUCCESS")
-                    
-            except Exception as pdf_err:
-                log_to_db(f"[SUCCESS] {filename} | Code: {ver_code} | PDF Error: {str(pdf_err)}", "WARNING")
+                        
+            else:
+                # --- TXT FILE: Generate 80mm Receipt PDF ---
+                from core.pdf_generator import generate_80mm_thermal_receipt
+                pdf_payload = {"receipt": full_payload['receipt'], "company_name": seller_data['name'], "seller_data": seller_data}
+                serial_number = Config.DEVICE_SERIAL_NUMBER
+                
+                pdf_buffer = generate_80mm_thermal_receipt(
+                    pdf_payload, ver_code, qr_code, 
+                    zimra.device_id, state['fiscal_day_no'], 
+                    seller_data, serial_number
+                )
+                
+                move_to = os.path.join(folder_path, 'Processed')
+                os.makedirs(move_to, exist_ok=True)
+                
+                pdf_filename = f"Receipt_{filename.replace('.txt', '.pdf')}"
+                pdf_path = os.path.join(move_to, pdf_filename)
+                with open(pdf_path, 'wb') as f: 
+                    f.write(pdf_buffer.getvalue())
+                
+                # Auto-print to default printer
+                try:
+                    import time
+                    import win32api
+                    time.sleep(1.5)
+                    win32api.ShellExecute(0, "print", pdf_path, None, ".", 1)
+                    print(f"🖨️ Sent {pdf_filename} to default printer.")
+                except Exception as print_err:
+                    print(f"⚠️ Could not auto-print: {print_err}")
+                
+                shutil.move(file_path, os.path.join(move_to, filename))
+                send_os_notification("✅ 80mm Receipt Generated", f"{filename}\nCode: {ver_code}")
+                log_to_db(f"[SUCCESS] {filename} | Code: {ver_code} | 80mm PDF Generated & Saved", "SUCCESS")
+                
             return f"[SUCCESS] {filename} | Code: {ver_code}"
+            
         else:
+            # ZIMRA Submission Failed
             error_msg = zimra_response if isinstance(zimra_response, str) else json.dumps(zimra_response, indent=2)
             send_os_notification("❌ ZIMRA Submission Failed", f"{filename}\nStatus {status_code}")
             payload_str = json.dumps(full_payload, indent=2) if full_payload else "Payload not available"
@@ -389,12 +444,31 @@ def process_single_file(file_path, folder_path):
             log_to_db(log_msg, "FAILED")
             move_to = os.path.join(folder_path, 'Failed'); os.makedirs(move_to, exist_ok=True); shutil.move(file_path, os.path.join(move_to, filename))
             return f"[FAILED] {filename} -> ZIMRA Error {status_code}"
+            
     except Exception as e:
+        # System Error
         send_os_notification("⚠️ System Error", f"Failed to process {filename}\n{str(e)[:100]}")
         payload_str = json.dumps(full_payload, indent=2) if full_payload else "Payload not available (error occurred before payload generation)"
         log_msg = f"[ERROR] {filename} -> {str(e)}\n\n--- GENERATED PAYLOAD ---\n{payload_str}\n-------------------------"
         log_to_db(log_msg, "ERROR")
-        move_to = os.path.join(folder_path, 'Errors'); os.makedirs(move_to, exist_ok=True); shutil.move(file_path, os.path.join(move_to, filename))
+        
+        # Move to Errors folder and guarantee deletion from source
+        move_to = os.path.join(folder_path, 'Errors')
+        os.makedirs(move_to, exist_ok=True)
+        dest_path = os.path.join(move_to, filename)
+        
+        try:
+            shutil.move(file_path, dest_path)
+        except Exception as move_err:
+            print(f"Could not move file: {move_err}")
+            
+        # Safety check: If the file still exists in the original folder, force delete it
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception as del_err:
+                print(f"Could not delete original file: {del_err}")
+                
         return f"[ERROR] {filename}"
 
 def scanner_loop(folder_path):

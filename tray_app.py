@@ -447,15 +447,15 @@ def on_close_fiscal_day(icon, item):
         show_notification("❌ Error", f"Failed to close fiscal day:\n{error_msg}", timeout=10)
 
 def on_start_scanner(icon, item):
-    """Start the folder scanner (Locked to AIBES PDF Only)."""
+    """Start the folder scanner."""
     print("\n▶️ Starting scanner...")
     status_code, settings = api_call("/api/scanner_settings", method="GET")
     
     folder_path = settings.get("folder_path", r"C:\Receipt") if status_code == 200 else r"C:\Receipt"
     print_format = settings.get("print_format", "InvoiceA4") if status_code == 200 else "InvoiceA4"
     
-    # HARDcoded to AIBES to prevent any wrong template selection
-    template = "aibes" 
+    # RESTORED: Dynamically fetch the template from the dashboard settings
+    template = settings.get("template", "feedmix") if status_code == 200 else "feedmix" 
     
     print(f"   Settings: folder={folder_path}, template={template}, format={print_format}")
     
@@ -470,11 +470,11 @@ def on_start_scanner(icon, item):
     if status_code == 200:
         result_status = data.get("status")
         if result_status == "started":
-            show_notification("▶️ Scanner Started", f"Monitoring: {folder_path}\nTemplate: AIBES (PDF Only)")
+            show_notification("▶️ Scanner Started", f"Monitoring: {folder_path}\nTemplate: {template.upper()}")
         elif result_status == "already_running":
             show_notification("ℹ️ Info", "Scanner is already running")
     else:
-        show_notification("❌ Error", f"Failed to start scanner: {data.get('error', str(data))}")
+        show_notification(" Error", f"Failed to start scanner: {data.get('error', str(data))}")
 
 def on_stop_scanner(icon, item):
     print("\n⏹️ Stopping scanner...")
@@ -483,6 +483,34 @@ def on_stop_scanner(icon, item):
         show_notification("⏹️ Scanner Stopped", "The folder scanner has been stopped")
     else:
         show_notification("❌ Error", f"Failed to stop scanner: {data.get('error', str(data))}")
+
+def on_set_format_invoicea4(icon, item):
+    """Set print format to InvoiceA4."""
+    api_call("/api/save_scanner_settings", method="POST", json_data={"receipt_print_format": "InvoiceA4"})
+    show_notification("Format Updated", "Print format set to A4 Invoice (InvoiceA4)")
+    # Force the tray menu to refresh and update checkmarks
+    if icon: 
+        icon.update_menu()
+
+def on_set_format_receipt48(icon, item):
+    """Set print format to Receipt48."""
+    api_call("/api/save_scanner_settings", method="POST", json_data={"receipt_print_format": "Receipt48"})
+    show_notification("Format Updated", "Print format set to 80mm Thermal (Receipt48)")
+    # Force the tray menu to refresh and update checkmarks
+    if icon: 
+        icon.update_menu()
+
+def check_format_invoicea4(item):
+    """Check if current format is InvoiceA4."""
+    status_code, settings = api_call("/api/scanner_settings", method="GET")
+    fmt = settings.get("print_format", "InvoiceA4") if status_code == 200 else "InvoiceA4"
+    return fmt == "InvoiceA4"
+
+def check_format_receipt48(item):
+    """Check if current format is Receipt48."""
+    status_code, settings = api_call("/api/scanner_settings", method="GET")
+    fmt = settings.get("print_format", "InvoiceA4") if status_code == 200 else "InvoiceA4"
+    return fmt == "Receipt48"
 
 def on_run_zreport(icon, item):
     print("\n📄 Running Z-Report...")
@@ -549,18 +577,24 @@ def setup_tray():
 
     menu = pystray.Menu(
         pystray.MenuItem(get_status_string, lambda: None, enabled=False),
-        pystray.MenuItem("📊 Open Dashboard", on_open_dashboard, default=True),
+        pystray.MenuItem(" Open Dashboard", on_open_dashboard, default=True),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("🔍 Check Device Status", on_check_status),
-        pystray.MenuItem("📅 Open Fiscal Day", on_open_fiscal_day),
+        pystray.MenuItem(" Open Fiscal Day", on_open_fiscal_day),
         pystray.MenuItem("📋 Close Fiscal Day / Z-Report", on_close_fiscal_day),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("▶️ Start Scanner (AIBES)", on_start_scanner),
-        pystray.MenuItem("⏹️ Stop Scanner", on_stop_scanner),
-        pystray.MenuItem("📄 Run Z-Report", on_run_zreport),
+        pystray.MenuItem("▶️ Start Scanner", on_start_scanner),
+        pystray.MenuItem("️ Stop Scanner", on_stop_scanner),
         pystray.Menu.SEPARATOR,
+        
+        # NEW: Print Format Toggles
+        pystray.MenuItem("🖨️ Format: A4 Invoice", on_set_format_invoicea4, checked=check_format_invoicea4),
+        pystray.MenuItem("🖨️ Format: 80mm Thermal", on_set_format_receipt48, checked=check_format_receipt48),
+        
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem(" Run Z-Report", on_run_zreport),
         pystray.MenuItem("📜 View Logs", on_view_logs),
-        pystray.MenuItem("ℹ️ About", on_about),
+        pystray.MenuItem("️ About", on_about),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("❌ Exit", on_exit),
     )
