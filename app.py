@@ -4,11 +4,16 @@ import shutil
 import sqlite3
 import threading
 import json
+import bs4
 import io
 import csv
+import re
 import requests
+from bs4 import BeautifulSoup
+from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, request, jsonify, Response
 from datetime import datetime, timedelta, time as dt_time
+from urllib.parse import urlencode, urljoin, urlparse
 from flasgger import Swagger
 from collections import defaultdict
 from core.zimra_client import ZimraClient, init_db, DB_PATH, db_lock
@@ -18,7 +23,6 @@ from core.zimra_validator import validate_zimra_payload
 from config import Config
 
 app = Flask(__name__)
-
 swagger_config = {
     "headers": [],
     "specs": [{"endpoint": 'apispec_1', "route": '/apispec_1.json', "rule_filter": lambda rule: True, "model_filter": lambda tag: True}],
@@ -27,7 +31,6 @@ swagger_config = {
     "version": "1.0.0", "uiversion": 3
 }
 swagger = Swagger(app, config=swagger_config)
-
 init_db()
 zimra = ZimraClient()
 
@@ -38,7 +41,7 @@ def send_os_notification(title, message):
         notification.notify(
             title=title,
             message=message,
-            app_name="FISCALINK",
+            app_name="AIBES FISCALISATION",
             timeout=5
         )
     except Exception as e:
@@ -51,18 +54,15 @@ def auto_fiscal_day_scheduler():
     """Background thread to automatically open and close the fiscal day."""
     print("⏰ Fiscal Day Auto-Scheduler started.")
     scheduler_state = {'last_opened_date': None, 'last_closed_date': None}
-    
     while True:
         try:
             now = datetime.now()
             current_time = now.time()
             today_str = now.strftime("%Y-%m-%d")
-            
             # Reset trackers at midnight
             if current_time < dt_time(0, 5):
                 scheduler_state['last_opened_date'] = None
                 scheduler_state['last_closed_date'] = None
-
             # Get current ZIMRA status
             try:
                 status_code, status_resp = zimra.get_status()
@@ -70,11 +70,10 @@ def auto_fiscal_day_scheduler():
             except Exception as e:
                 print(f"⚠️ [SCHEDULER] Could not get ZIMRA status: {e}")
                 current_status = ""
-
-            # 1. Auto Close at 5:00 PM (17:00)
-            if current_time >= dt_time(17, 0) and current_time < dt_time(17, 30):
+            # 1. Auto Close at 11:00 PM (23:00)
+            if current_time >= dt_time(23, 0) and current_time < dt_time(23, 30):
                 if "Opened" in current_status and scheduler_state['last_closed_date'] != today_str:
-                    print(f"\n⏰ [AUTO-SCHEDULER] 5:00 PM reached. Closing fiscal day...")
+                    print(f"\n⏰ [AUTO-SCHEDULER] 11:00 PM reached. Closing fiscal day...")
                     try:
                         res = requests.post("http://localhost:5000/api/close_day", json={}, timeout=60)
                         if res.status_code == 200:
@@ -82,12 +81,11 @@ def auto_fiscal_day_scheduler():
                             if data.get("http_status") == 200:
                                 print("✅ [AUTO-SCHEDULER] Fiscal day closed successfully!")
                                 scheduler_state['last_closed_date'] = today_str
-                                send_os_notification("🌙 Auto Closed", "Fiscal day closed automatically at 5:00 PM.")
+                                send_os_notification("🌙 Auto Closed", "Fiscal day closed automatically at 11:00 PM.")
                             else:
-                                print(f"⚠️ [AUTO-SCHEDULER] ZIMRA rejected close: {data.get('zimra_response')}")
+                                print(f"️ [AUTO-SCHEDULER] ZIMRA rejected close: {data.get('zimra_response')}")
                     except Exception as e:
                         print(f"❌ [AUTO-SCHEDULER] Error closing day: {e}")
-
             # 2. Auto Open at 8:30 AM (08:30)
             if current_time >= dt_time(8, 30) and current_time < dt_time(8, 40):
                 if scheduler_state['last_opened_date'] != today_str:
@@ -100,7 +98,6 @@ def auto_fiscal_day_scheduler():
                                 current_day = res_details.json().get("fiscal_day_no", "0")
                                 try: next_day = int(current_day) + 1
                                 except: next_day = 1
-                            
                             res = requests.post("http://localhost:5000/api/open_day", json={"fiscalDayNo": next_day}, timeout=30)
                             if res.status_code == 200:
                                 data = res.json()
@@ -112,33 +109,28 @@ def auto_fiscal_day_scheduler():
                                     print(f"⚠️ [AUTO-SCHEDULER] ZIMRA rejected open: {data.get('zimra_response')}")
                         except Exception as e:
                             print(f"❌ [AUTO-SCHEDULER] Error opening day: {e}")
-                            
                     elif "Opened" in current_status:
                         # Fallback: If yesterday's day is still open at 8:30 AM, close it first
-                        print(f"⚠️ [AUTO-SCHEDULER] Previous day is still open at 8:30 AM. Closing it first...")
+                        print(f"️ [AUTO-SCHEDULER] Previous day is still open at 8:30 AM. Closing it first...")
                         try:
                             res_close = requests.post("http://localhost:5000/api/close_day", json={}, timeout=60)
                             if res_close.status_code == 200 and res_close.json().get("http_status") == 200:
                                 scheduler_state['last_closed_date'] = today_str
                                 print("✅ [AUTO-SCHEDULER] Previous day closed. Now opening today's day...")
-                                
                                 res_details = requests.get("http://localhost:5000/api/device_details", timeout=10)
                                 next_day = 1
                                 if res_details.status_code == 200:
                                     current_day = res_details.json().get("fiscal_day_no", "0")
                                     try: next_day = int(current_day) + 1
                                     except: next_day = 1
-                                
                                 res_open = requests.post("http://localhost:5000/api/open_day", json={"fiscalDayNo": next_day}, timeout=30)
                                 if res_open.status_code == 200 and res_open.json().get("http_status") == 200:
                                     scheduler_state['last_opened_date'] = today_str
                                     send_os_notification("☀️ Auto Opened", f"Previous day closed & Day {next_day} opened automatically.")
                         except Exception as e:
-                            print(f"❌ [AUTO-SCHEDULER] Error in fallback close/open: {e}")
-
+                            print(f" [AUTO-SCHEDULER] Error in fallback close/open: {e}")
         except Exception as e:
             print(f"❌ [AUTO-SCHEDULER] Unexpected error: {e}")
-            
         # Sleep for 60 seconds
         time.sleep(60)
 
@@ -149,7 +141,6 @@ def ensure_scanner_tables():
     with db_lock:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
-            
             # 1. Create scanner_logs table
             cursor.execute('''CREATE TABLE IF NOT EXISTS scanner_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, 
@@ -157,20 +148,14 @@ def ensure_scanner_tables():
                 message TEXT, 
                 status TEXT
             )''')
-            
             # 2. Create system_config table
             cursor.execute('''CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT)''')
-            
             # 3. Insert default configurations
             cursor.execute("INSERT OR IGNORE INTO system_config (key, value) VALUES ('scanner_print_format', 'InvoiceA4')")
             cursor.execute("INSERT OR IGNORE INTO system_config (key, value) VALUES ('scanner_folder', 'C:\\Receipt')")
             cursor.execute("INSERT OR IGNORE INTO system_config (key, value) VALUES ('process_pdfs', 'True')")
-            
             # 4. Insert default template ONLY if it doesn't exist yet
-            cursor.execute("INSERT OR IGNORE INTO system_config (key, value) VALUES ('receipt_template', 'feedmix')")
-            
-            # (Removed the forced UPDATE to 'aibes' so the user's dropdown selection is respected)
-            
+            cursor.execute("INSERT OR IGNORE INTO system_config (key, value) VALUES ('receipt_template', 'aibes_incl')")
             # 6. Create receipt_items table
             cursor.execute('''CREATE TABLE IF NOT EXISTS receipt_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, 
@@ -186,18 +171,15 @@ def ensure_scanner_tables():
                 tax_percent REAL, 
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )''')
-            
             # 7. Check if receipt_currency column exists, add if missing (for legacy DBs)
             cursor.execute("PRAGMA table_info(receipt_items)")
             columns = [col[1] for col in cursor.fetchall()]
             if 'receipt_currency' not in columns:
                 cursor.execute("ALTER TABLE receipt_items ADD COLUMN receipt_currency TEXT DEFAULT 'USD'")
-            
             # 8. Commit all changes
             conn.commit()
 
 ensure_scanner_tables()
-
 scanner_state = {'is_running': False, 'thread': None, 'folder': '', 'log': []}
 
 def log_to_db(message, status="INFO"):
@@ -218,12 +200,12 @@ def get_scanner_settings():
             fmt = conn.execute("SELECT value FROM system_config WHERE key = 'scanner_print_format'").fetchone()
             tpl = conn.execute("SELECT value FROM system_config WHERE key = 'receipt_template'").fetchone()
             pdfs = conn.execute("SELECT value FROM system_config WHERE key = 'process_pdfs'").fetchone()
-    return {
-        "folder_path": folder[0] if folder else r'C:\Receipt',
-        "print_format": fmt[0] if fmt else 'InvoiceA4',
-        "template": tpl[0] if tpl else 'aibes',
-        "process_pdfs": pdfs[0] == 'True' if pdfs else True
-    }
+            return {
+                "folder_path": folder[0] if folder else r'C:\Receipt',
+                "print_format": fmt[0] if fmt else 'InvoiceA4',
+                "template": tpl[0] if tpl else 'aibes_incl',
+                "process_pdfs": pdfs[0] == 'True' if pdfs else True
+            }
 
 def process_single_file(file_path, folder_path):
     filename = os.path.basename(file_path)
@@ -236,7 +218,10 @@ def process_single_file(file_path, folder_path):
         # 1. Parse the file based on extension and template
         if is_pdf:
             template = settings['template']
-            if template.lower() == 'aibes':
+            if template.lower() == 'aibes_incl':# NEW: AIBES INCL Template
+                from core.receipt_parser import parse_aibes_incl_receipt
+                parsed_data = parse_aibes_incl_receipt(file_path)
+            elif template.lower() == 'aibes': 
                 from core.receipt_parser import parse_aibes_receipt
                 parsed_data = parse_aibes_receipt(file_path)
             elif template.lower() == 'feedmix':
@@ -273,10 +258,29 @@ def process_single_file(file_path, folder_path):
                         shutil.move(file_path, os.path.join(move_to, filename))
                         return f"[VALIDATION FAILED] {filename}"
 
+        # ============================================================
+        # 3. VALIDATION: Credit Note Original Invoice Check
+        # ============================================================
+        receipt_type = parsed_data.get('receipt_type', 'FiscalInvoice')
+        original_invoice_no = str(parsed_data.get('original_invoice_no', '')).strip()
+        
+        if receipt_type == 'CreditNote' and original_invoice_no:
+            with db_lock:
+                with sqlite3.connect(DB_PATH) as conn:
+                    cursor = conn.execute("SELECT id FROM receipt_audit WHERE invoice_no = ? AND status = 'SUCCESS'", (original_invoice_no,))
+                    if not cursor.fetchone():
+                        send_os_notification("❌ Validation Failed", f"Credit note for unexisting invoice: {original_invoice_no}")
+                        log_to_db(f"[VALIDATION FAILED] {filename} -> Credit note for unexisting invoice {original_invoice_no}", "FAILED")
+                        move_to = os.path.join(folder_path, 'Errors')
+                        os.makedirs(move_to, exist_ok=True)
+                        shutil.move(file_path, os.path.join(move_to, filename))
+                        return f"[VALIDATION FAILED] {filename}"
+        # ============================================================
+
         full_payload = {"deviceID": int(zimra.device_id), "receipt": receipt_payload}
         full_payload['receipt']['receiptPrintForm'] = settings['print_format']
         
-        # 3. ZIMRA Payload Validation
+        # 4. ZIMRA Payload Validation
         validation_errors = validate_zimra_payload(full_payload)
         if validation_errors:
             audit_data = {
@@ -296,10 +300,43 @@ def process_single_file(file_path, folder_path):
             move_to = os.path.join(folder_path, 'Failed'); os.makedirs(move_to, exist_ok=True); shutil.move(file_path, os.path.join(move_to, filename))
             return f"[VALIDATION FAILED] {filename}"
             
-        # 4. Submit to ZIMRA
+        # 5. Submit to ZIMRA
         status_code, zimra_response, ver_code, qr_code, hash_b64, receipt_audit_id = zimra.submit_receipt(full_payload)
         
         if status_code == 200:
+            # ============================================================
+            # NEW: Log successful payload to Terminal and Dashboard Scan Log
+            # ============================================================
+            print("\n" + "="*60)
+            print("✅ SUCCESSFUL INVOICE PAYLOAD:")
+            print(f"Filename: {filename} | Verification Code: {ver_code}")
+            print(json.dumps(full_payload, indent=2))
+            print("="*60 + "\n")
+            
+            # Save to dashboard scanner history log
+            log_to_db(f"[SUCCESS PAYLOAD] {filename} | Code: {ver_code}\n{json.dumps(full_payload, indent=2)}", "SUCCESS")
+            # ============================================================
+
+            # Sync counters
+            if isinstance(zimra_response, dict):
+                resp_data = zimra_response.get('data', zimra_response) if isinstance(zimra_response.get('data'), dict) else zimra_response
+                new_counter = resp_data.get('receiptCounter')
+                new_global = resp_data.get('receiptGlobalNo')
+                if new_counter:
+                    try:
+                        with db_lock:
+                            with sqlite3.connect(DB_PATH) as conn:
+                                conn.execute("UPDATE fiscal_state SET receipt_counter = ? WHERE device_id = ?", 
+                                             (int(new_counter), zimra.device_id))
+                                if new_global:
+                                    conn.execute("UPDATE fiscal_state SET receipt_global_no = ? WHERE device_id = ?", 
+                                                 (int(new_global), zimra.device_id))
+                        print(f"✅ Synced local counters: receipt_counter={new_counter}, receipt_global_no={new_global}")
+                    except Exception as sync_err:
+                        print(f"⚠️ Warning: Could not sync local counters: {sync_err}")
+                        
+            # ============================================================
+
             # Log items to DB
             try:
                 zimra.log_receipt_items(
@@ -324,8 +361,19 @@ def process_single_file(file_path, folder_path):
             except:
                 seller_data = {'name': 'FISCALINK', 'address': '', 'tin': '', 'vat': '', 'phone': '', 'email': ''}
 
+            # Log full payload for Credit Notes
+            if receipt_type == 'CreditNote':
+                print("\n" + "="*60)
+                print("📄 CREDIT NOTE SUBMISSION LOG:")
+                print("="*60)
+                print(f"Original Invoice: {original_invoice_no}")
+                print(f"Credit Reason: {parsed_data.get('credit_reason', 'N/A')}")
+                print(f"Payload: {json.dumps(full_payload, indent=2)}")
+                print("="*60 + "\n")
+                log_to_db(f"[CREDIT NOTE] Original Invoice: {original_invoice_no}\nPayload: {json.dumps(full_payload, indent=2)}", "INFO")    
+            
             # ============================================================
-            # 5. OUTPUT GENERATION & PRINTING
+            # 6. OUTPUT GENERATION & PRINTING
             # ============================================================
             if is_pdf:
                 print_format = settings.get('print_format', 'InvoiceA4')
@@ -350,13 +398,18 @@ def process_single_file(file_path, folder_path):
                     with open(pdf_path, 'wb') as f: 
                         f.write(pdf_buffer.getvalue())
                     
-                    # Auto-print to default printer
+                    # Auto-print to SPECIFIC printer defined in config.json
                     try:
                         import time
                         import win32api
                         time.sleep(1.5)
-                        win32api.ShellExecute(0, "print", pdf_path, None, ".", 1)
-                        print(f"🖨️ Sent {pdf_filename} to default printer.")
+                        printer_name = getattr(Config, 'PRINTER_NAME', None)
+                        if printer_name:
+                            win32api.ShellExecute(0, "printto", pdf_path, f'"{printer_name}"', ".", 0)
+                            print(f"🖨️ Sent {pdf_filename} to specific printer: {printer_name}")
+                        else:
+                            win32api.ShellExecute(0, "print", pdf_path, None, ".", 1)
+                            print(f"️ Sent {pdf_filename} to default printer.")
                     except Exception as print_err:
                         print(f"⚠️ Could not auto-print: {print_err}")
                         
@@ -364,7 +417,7 @@ def process_single_file(file_path, folder_path):
                     send_os_notification("✅ 80mm Receipt Generated", f"{filename}\nCode: {ver_code}")
                     log_to_db(f"[SUCCESS] {filename} | Code: {ver_code} | 80mm PDF Generated & Printed", "SUCCESS")
 
-                # --- STAMP PDF (AIBES or Feedmix with InvoiceA4) ---
+                # --- STAMP PDF (AIBES, AIBES EXCL or Feedmix with InvoiceA4) ---
                 else:
                     stamped_filename = filename.replace('.pdf', '_stamped.pdf')
                     stamped_path = os.path.join(folder_path, stamped_filename)
@@ -419,13 +472,18 @@ def process_single_file(file_path, folder_path):
                 with open(pdf_path, 'wb') as f: 
                     f.write(pdf_buffer.getvalue())
                 
-                # Auto-print to default printer
+                # Auto-print to SPECIFIC printer defined in config.json
                 try:
                     import time
                     import win32api
                     time.sleep(1.5)
-                    win32api.ShellExecute(0, "print", pdf_path, None, ".", 1)
-                    print(f"🖨️ Sent {pdf_filename} to default printer.")
+                    printer_name = getattr(Config, 'PRINTER_NAME', None)
+                    if printer_name:
+                        win32api.ShellExecute(0, "printto", pdf_path, f'"{printer_name}"', ".", 0)
+                        print(f"️ Sent {pdf_filename} to specific printer: {printer_name}")
+                    else:
+                        win32api.ShellExecute(0, "print", pdf_path, None, ".", 1)
+                        print(f"🖨️ Sent {pdf_filename} to default printer.")
                 except Exception as print_err:
                     print(f"⚠️ Could not auto-print: {print_err}")
                 
@@ -438,6 +496,39 @@ def process_single_file(file_path, folder_path):
         else:
             # ZIMRA Submission Failed
             error_msg = zimra_response if isinstance(zimra_response, str) else json.dumps(zimra_response, indent=2)
+            
+            # ============================================================
+            # Print color-coded ZIMRA Validation Errors to terminal
+            # ============================================================
+            print("\n" + "="*60)
+            print(" ZIMRA SUBMISSION FAILED - VALIDATION ERRORS:")
+            print("="*60)
+            if isinstance(zimra_response, dict):
+                errors_list = zimra_response.get('validationErrors', zimra_response.get('errors', []))
+                if not errors_list and 'message' in zimra_response:
+                    errors_list = [{'severity': 'Red', 'message': zimra_response['message']}]
+                elif not errors_list and isinstance(zimra_response.get('data'), dict):
+                    errors_list = zimra_response['data'].get('validationErrors', zimra_response['data'].get('errors', []))
+                if isinstance(errors_list, list) and errors_list:
+                    for err in errors_list:
+                        severity = str(err.get('severity', err.get('color', err.get('level', 'Red')))).upper()
+                        message = err.get('message', err.get('description', str(err)))
+                        if 'RED' in severity or 'CRITICAL' in severity:
+                            print(f"🔴 [RED - CRITICAL] {message}")
+                        elif 'YELLOW' in severity or 'MINOR' in severity or 'WARNING' in severity:
+                            print(f"🟡 [YELLOW - MINOR] {message}")
+                        elif 'GREY' in severity or 'GRAY' in severity or 'TECHNICAL' in severity or 'INFO' in severity:
+                            print(f" [GREY - TECHNICAL] {message}")
+                        else:
+                            print(f"️  [{severity}] {message}")
+                else:
+                    print("Raw ZIMRA Response:")
+                    print(error_msg)
+            else:
+                print(error_msg)
+            print("="*60 + "\n")
+            # ============================================================
+
             send_os_notification("❌ ZIMRA Submission Failed", f"{filename}\nStatus {status_code}")
             payload_str = json.dumps(full_payload, indent=2) if full_payload else "Payload not available"
             log_msg = f"[ZIMRA ERROR] {filename} -> Status {status_code}: {error_msg}\n\n--- GENERATED PAYLOAD ---\n{payload_str}\n-------------------------"
@@ -473,7 +564,7 @@ def process_single_file(file_path, folder_path):
 
 def scanner_loop(folder_path):
     while scanner_state['is_running']:
-        if not os.path.exists(folder_path): 
+        if not os.path.exists(folder_path):
             log_to_db(f"Folder {folder_path} not found. Stopping.", "ERROR")
             scanner_state['is_running'] = False
             break
@@ -492,11 +583,29 @@ def scanner_loop(folder_path):
                     except IOError: time.sleep(1)
                 if is_ready:
                     process_single_file(file_path, folder_path)
-        time.sleep(5)
+                time.sleep(5)
 
 @app.route('/api/start_scanning', methods=['POST'])
 def api_start_scanning():
-    data = request.json
+    # ============================================================
+    # LICENSE ENFORCEMENT CHECK
+    # ============================================================
+    from core.license_manager import get_license_status
+    license_status = get_license_status()
+    if not license_status.get("is_valid"):
+        status = license_status.get("status", "INVALID")
+        msg = license_status.get("message", "Unknown error")
+        error_message = f"License Not Active: {msg}"
+        if status == "NOT_SET":
+            error_message = "License Not Active: Please activate your license in the dashboard before starting the scanner."
+        elif status == "EXPIRED":
+            error_message = f"License Expired: {msg}"
+        elif status == "INVALID":
+            error_message = f"Invalid License: {msg}"
+        return jsonify({"status": "error", "message": error_message}), 403
+    # ============================================================
+    # --- EXISTING SCANNER START LOGIC GOES BELOW HERE ---
+    data = request.json or {}
     folder_path = data.get('folder_path', r'C:\Receipt')
     process_pdfs = data.get('process_pdfs', True)
     with db_lock:
@@ -537,7 +646,7 @@ def api_scanner_history():
         with sqlite3.connect(DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute("SELECT * FROM scanner_logs ORDER BY id DESC LIMIT ?", (int(limit),)).fetchall()
-    return jsonify([{"id": r['id'], "timestamp": r['timestamp'], "message": r['message'], "status": r['status']} for r in rows])
+            return jsonify([{"id": r['id'], "timestamp": r['timestamp'], "message": r['message'], "status": r['status']} for r in rows])
 
 @app.route('/api/clear_scanner_history', methods=['POST'])
 def api_clear_scanner_history():
@@ -553,8 +662,18 @@ def api_status():
 
 @app.route('/api/open_day', methods=['POST'])
 def api_open_day():
-    data = request.json or {}; fiscal_day_no = data.get('fiscalDayNo')
+    data = request.json or {}
+    fiscal_day_no = data.get('fiscalDayNo')
+    # Call ZIMRA API
     status_code, response = zimra.open_day(fiscal_day_no)
+    # ============================================================
+    # NEW: Print full response to terminal for debugging CounterMismatch
+    # ============================================================
+    print("\n" + "="*60)
+    print("🔴 RAW ZIMRA SERVER RESPONSE (OPEN DAY):")
+    print(json.dumps(response, indent=2, default=str))
+    print("="*60 + "\n")
+    # ============================================================
     if status_code == 200:
         actual_day_no = response.get('fiscalDayNo', fiscal_day_no) if isinstance(response, dict) else fiscal_day_no
         zimra.reset_daily_counter(actual_day_no, datetime.now().strftime("%Y-%m-%d"))
@@ -565,11 +684,11 @@ def api_device_details():
     try:
         state = zimra.get_state()
         details = {
-            "company_name": "Vantoss Enterprises",
+            "company_name": "-------",
             "device_id": zimra.device_id,
             "serial_number": Config.DEVICE_SERIAL_NUMBER,
-            "vat_number": "220028226",
-            "taxpayer_tin": "2000446071",
+            "vat_number": "------",
+            "taxpayer_tin": "-------",
             "fiscal_day_no": state.get('fiscal_day_no', 'N/A'),
             "receipt_global_no": state.get('receipt_global_no', 'N/A'),
             "status": "Active"
@@ -620,12 +739,12 @@ def api_submit_receipt():
         ]
         payload = {
             "deviceID": int(zimra.device_id), "receipt": {
-                "receiptType": receipt_type.upper().replace(" ", ""), "receiptCurrency": currency, "receiptCounter": counter, "receiptGlobalNo": global_no, 
+                "receiptType": receipt_type.upper().replace(" ", ""), "receiptCurrency": currency, "receiptCounter": counter, "receiptGlobalNo": global_no,
                 "invoiceNo": data.get('invoiceNo', f"INV-{counter}"),
                 "buyerData": {"buyerRegisterName": data.get('buyerName', 'Test Buyer'), "buyerTradeName": data.get('buyerTradeName', data.get('buyerName', '')),
-                              "buyerTIN": data.get('buyerTIN', '2000457810'), "vatNumber": data.get('buyerVATNumber', '220006789'),
-                              "buyerContacts": {"email": data.get('buyerEmail', 'test@gmail.com'), "phoneNo": data.get('buyerPhone', '0798567859')},
-                              "buyerAddress": {"province": data.get('buyerProvince', 'Harare'), "street": data.get('buyerStreet', '1at Street'), "houseNo": data.get('buyerHouseNo', '787'), "city": data.get('buyerCity', 'Harare')}},
+                "buyerTIN": data.get('buyerTIN', '2000457810'), "vatNumber": data.get('buyerVATNumber', '220006789'),
+                "buyerContacts": {"email": data.get('buyerEmail', 'test@gmail.com'), "phoneNo": data.get('buyerPhone', '0798567859')},
+                "buyerAddress": {"province": data.get('buyerProvince', 'Harare'), "street": data.get('buyerStreet', '1st Street'), "houseNo": data.get('buyerHouseNo', '787'), "city": data.get('buyerCity', 'Harare')}},
                 "receiptNotes": data.get('receiptNotes', 'Invoice is issued after purchasing goods'), "receiptDate": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"), "receiptLinesTaxInclusive": True,
                 "receiptLines": receipt_lines, "receiptTaxes": receipt_taxes,
                 "receiptPayments": [{"moneyTypeCode": data.get('moneyTypeCode', 'Cash'), "paymentAmount": total}],
@@ -635,15 +754,13 @@ def api_submit_receipt():
         if receipt_type.lower() == 'creditnote' and data.get('originalInvoiceNo'):
             payload['receipt']['receiptNotes'] = f"Credit Note for {data['originalInvoiceNo']}"
             payload['receipt']['creditDebitNote'] = {
-                "deviceID": int(zimra.device_id), 
-                "receiptGlobalNo": data.get('originalGlobalNo', global_no - 1), 
+                "deviceID": int(zimra.device_id),
+                "receiptGlobalNo": data.get('originalGlobalNo', global_no - 1),
                 "fiscalDayNo": fiscal_day,
                 "receiptDate": data.get('originalDate', datetime.now().strftime("%Y-%m-%dT%H:%M:%S"))
             }
-        
         validation_errors = validate_zimra_payload(payload)
         if validation_errors: return jsonify({"Code": "0", "Message": "Payload failed ZIMRA validation.", "ValidationErrors": validation_errors, "DeviceId": str(zimra.device_id)}), 400
-            
         status_code, zimra_response, ver_code, qr_code, hash_b64, receipt_audit_id = zimra.submit_receipt(payload)
         if status_code == 200:
             try:
@@ -662,9 +779,11 @@ def api_submit_receipt():
 @app.route('/api/close_day', methods=['POST'])
 def api_close_day():
     try:
-        data = request.json or {}; fiscal_day_no = data.get('fiscalDayNo')
+        data = request.json or {}
+        fiscal_day_no = data.get('fiscalDayNo')
         state = zimra.get_state()
-        if not fiscal_day_no: fiscal_day_no = state['fiscal_day_no']
+        if not fiscal_day_no: 
+            fiscal_day_no = state['fiscal_day_no']
         last_receipt_counter = max(0, state['receipt_counter'] - 1)
         with db_lock:
             with sqlite3.connect(DB_PATH) as conn:
@@ -684,20 +803,30 @@ def api_close_day():
             curr = row['receipt_currency'] or 'USD'
             total = float(row['total_amount'] or 0)
             r_type = row['receipt_type'].upper().replace(" ", "")
-            currencies[curr]['total_sales'] += total; currencies[curr]['count'] += 1; balance_by_money[(curr, 'Cash')] += total
+            currencies[curr]['total_sales'] += total
+            currencies[curr]['count'] += 1
+            balance_by_money[(curr, 'Cash')] += total
         if items:
             for item in items:
-                curr = item['receipt_currency'] or 'USD'; r_type = item['receipt_type'].upper().replace(" ", "")
-                tax_pct = float(item['tax_percent'] or 0); total = float(item['total'] or 0)
+                curr = item['receipt_currency'] or 'USD'
+                r_type = item['receipt_type'].upper().replace(" ", "")
+                tax_pct = float(item['tax_percent'] or 0)
+                total = float(item['total'] or 0)
                 if tax_pct > 0:
                     tax_amt = round(total - (total / (1 + (tax_pct / 100.0))), 2)
                 else:
                     tax_amt = 0.0
                 currencies[curr]['total_tax'] += tax_amt
-                if r_type == 'FISCALINVOICE': counter_type = 'SaleByTax'; tax_counter_type = 'SaleTaxByTax'
-                elif r_type == 'CREDITNOTE': counter_type = 'CreditNoteByTax'; tax_counter_type = 'CreditNoteTaxByTax'
-                else: continue
-                sale_by_tax[curr][counter_type][tax_pct] += total; sale_tax_by_tax[curr][tax_counter_type][tax_pct] += tax_amt
+                if r_type == 'FISCALINVOICE': 
+                    counter_type = 'SaleByTax'
+                    tax_counter_type = 'SaleTaxByTax'
+                elif r_type == 'CREDITNOTE': 
+                    counter_type = 'CreditNoteByTax'
+                    tax_counter_type = 'CreditNoteTaxByTax'
+                else: 
+                    continue
+                sale_by_tax[curr][counter_type][tax_pct] += total
+                sale_tax_by_tax[curr][tax_counter_type][tax_pct] += tax_amt
         fiscal_counters = []
         for curr, r_types in sale_by_tax.items():
             for r_type, taxes in r_types.items():
@@ -712,15 +841,34 @@ def api_close_day():
                         tax_id = 515 if tax_pct == 15.5 else (2 if tax_pct == 0.0 else 515)
                         fiscal_counters.append({"fiscalCounterType": r_type, "fiscalCounterCurrency": curr, "fiscalCounterTaxPercent": float(f"{float(tax_pct):.2f}"), "fiscalCounterTaxID": int(tax_id), "fiscalCounterValue": float(f"{float(val):.2f}")})
         for (curr, mtype), val in balance_by_money.items():
-            if val != 0: fiscal_counters.append({"fiscalCounterType": "BalanceByMoneyType", "fiscalCounterCurrency": curr, "fiscalCounterMoneyType": mtype, "fiscalCounterValue": float(f"{float(val):.2f}")})
+            if val != 0: 
+                fiscal_counters.append({"fiscalCounterType": "BalanceByMoneyType", "fiscalCounterCurrency": curr, "fiscalCounterMoneyType": mtype, "fiscalCounterValue": float(f"{float(val):.2f}")})
+        # Call ZIMRA API
         status_code, response = zimra.close_day(fiscal_day_no, last_receipt_counter, fiscal_counters)
-        z_report = {"fiscal_day_no": fiscal_day_no, "device_id": zimra.device_id, "close_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "total_receipts": len(rows), "currencies": dict(currencies)}
+        # ============================================================
+        # NEW: Print full response to terminal for debugging CounterMismatch
+        # ============================================================
+        print("\n" + "="*60)
+        print("🔴 RAW ZIMRA SERVER RESPONSE (CLOSE DAY):")
+        print(json.dumps(response, indent=2, default=str))
+        print("="*60 + "\n")
+        # ============================================================
+        z_report = {
+            "fiscal_day_no": fiscal_day_no, 
+            "device_id": zimra.device_id, 
+            "close_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
+            "total_receipts": len(rows), 
+            "currencies": dict(currencies)
+        }
         with db_lock:
             with sqlite3.connect(DB_PATH) as conn:
-                conn.execute("INSERT INTO z_reports (fiscal_day_no, device_id, close_date, total_receipts, currencies_json, total_sales, total_tax, zimra_response_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (fiscal_day_no, zimra.device_id, z_report['close_date'], z_report['total_receipts'], json.dumps(z_report['currencies']), sum(c['total_sales'] for c in currencies.values()), sum(c['total_tax'] for c in currencies.values()), json.dumps(response)))
+                conn.execute("INSERT INTO z_reports (fiscal_day_no, device_id, close_date, total_receipts, currencies_json, total_sales, total_tax, zimra_response_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", 
+                             (fiscal_day_no, zimra.device_id, z_report['close_date'], z_report['total_receipts'], json.dumps(z_report['currencies']), sum(c['total_sales'] for c in currencies.values()), sum(c['total_tax'] for c in currencies.values()), json.dumps(response)))
         return jsonify({"http_status": status_code, "zimra_response": response, "z_report": z_report})
     except Exception as e:
-        import traceback; traceback.print_exc(); return jsonify({"http_status": 500, "error": str(e)}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({"http_status": 500, "error": str(e)}), 500
 
 @app.route('/api/receipt_stats', methods=['GET'])
 def api_receipt_stats():
@@ -732,11 +880,196 @@ def api_receipt_stats():
                 total_failed = conn.execute("SELECT COUNT(*) as count FROM receipt_audit WHERE status != 'SUCCESS'").fetchone()['count']
                 recent_success = conn.execute("SELECT * FROM receipt_audit WHERE status = 'SUCCESS' ORDER BY created_at DESC LIMIT 10").fetchall()
                 recent_failed = conn.execute("SELECT * FROM receipt_audit WHERE status != 'SUCCESS' ORDER BY created_at DESC LIMIT 10").fetchall()
-        def to_dict(row):
-            resp = row['zimra_response'] or ''
-            return {"invoice_no": row['invoice_no'], "total_amount": row['total_amount'], "verification_code": row['verification_code'], "status": row['status'], "created_at": row['created_at'], "zimra_response": (resp[:100] + "...") if len(resp) > 100 else resp}
-        return jsonify({"total_success": total_success, "total_failed": total_failed, "recent_success": [to_dict(r) for r in recent_success], "recent_failed": [to_dict(r) for r in recent_failed]})
+                def to_dict(row):
+                    resp = row['zimra_response'] or ''
+                    return {"invoice_no": row['invoice_no'], "total_amount": row['total_amount'], "verification_code": row['verification_code'], "status": row['status'], "created_at": row['created_at'], "zimra_response": (resp[:100] + "...") if len(resp) > 100 else resp}
+                return jsonify({"total_success": total_success, "total_failed": total_failed, "recent_success": [to_dict(r) for r in recent_success], "recent_failed": [to_dict(r) for r in recent_failed]})
     except Exception as e: return jsonify({"error": str(e)}), 500
+
+def check_zimra_receipt(qr_url):
+    """Verify a stored receipt QR URL using the public ZIMRA receipt page."""
+    if not qr_url:
+        return "Unverified", "No QR verification URL is stored.", {}
+
+    configured_host = urlparse(Config.QR_BASE_URL).hostname
+    current_url = str(qr_url).strip()
+    if not configured_host:
+        return "Unverified", "The configured ZIMRA QR host is invalid.", {}
+
+    for _ in range(6):
+        response = None
+        parsed_url = urlparse(current_url)
+        try:
+            is_trusted_url = (
+                parsed_url.scheme.lower() == "https"
+                and parsed_url.hostname == configured_host
+                and parsed_url.port in (None, 443)
+                and parsed_url.username is None
+                and parsed_url.password is None
+            )
+        except ValueError:
+            is_trusted_url = False
+
+        if not is_trusted_url:
+            return "Unverified", "QR URL or redirect is not on the configured ZIMRA host.", {}
+
+        try:
+            response = requests.get(
+                current_url,
+                timeout=(3, 8),
+                allow_redirects=False,
+            )
+            if response.is_redirect or response.is_permanent_redirect:
+                redirect_url = response.headers.get("Location")
+                if not redirect_url:
+                    return "Unverified", "ZIMRA returned a redirect without a destination.", {}
+                current_url = urljoin(current_url, redirect_url)
+                continue
+
+            if response.status_code != 200:
+                return "Unverified", f"ZIMRA returned HTTP {response.status_code}.", {}
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, "html.parser")
+            page_text = soup.get_text(separator=" ")
+            has_valid_marker = soup.select_one(
+                ".check-circle, .fa-check-circle, .bi-check-circle"
+            ) is not None
+            normalized_text = page_text.lower()
+            if "credit note is valid" in normalized_text:
+                status, detail = "Valid", "Credit note is valid on ZIMRA."
+            elif "invoice is valid" in normalized_text:
+                status, detail = "Valid", "Invoice is valid on ZIMRA."
+            elif has_valid_marker:
+                status, detail = "Valid", "Receipt is valid on ZIMRA."
+            else:
+                status = None
+
+            if status is None:
+                error_block = soup.find(class_="val-errors-block")
+                if error_block:
+                    errors = [
+                        cell.get_text(strip=True)
+                        for cell in error_block.find_all("div", class_="col")
+                    ]
+                    detail = " | ".join(errors) or error_block.get_text(" ", strip=True)
+                    return "Invalid", detail or "ZIMRA did not validate this receipt.", {}
+                return "Invalid", "ZIMRA did not validate this receipt.", {}
+
+            customer = {"customer_name": "N/A", "customer_vat": "N/A", "customer_tin": "N/A"}
+            form = soup.find("form", action=lambda action: action and "/Receipt/Print" in action)
+            if form:
+                validation_id = form.find("input", attrs={"name": "validationId"})
+                security_code = form.find("input", attrs={"name": "validationSecurityCode"})
+                if validation_id and security_code:
+                    print_url = urljoin(current_url, f"/Receipt/Print?{urlencode({
+                        'validationId': validation_id.get('value', ''),
+                        'validationSecurityCode': security_code.get('value', ''),
+                    })}")
+                    print_host = urlparse(print_url)
+                    if (
+                        print_host.scheme.lower() == "https"
+                        and print_host.hostname == configured_host
+                        and print_host.port in (None, 443)
+                        and print_host.username is None
+                        and print_host.password is None
+                    ):
+                        print_response = None
+                        try:
+                            print_response = requests.get(
+                                print_url, timeout=(3, 8), allow_redirects=False
+                            )
+                            if (
+                                print_response.status_code == 200
+                                and not print_response.is_redirect
+                            ):
+                                print_soup = BeautifulSoup(print_response.text, "html.parser")
+                                print_text = print_soup.get_text(separator="\n")
+                                buyer_match = re.search(
+                                    r"BUYER\s*\n(.+?)(?=\n\s*(?:Invoice No:|Fiscal day no:|Device Serial|Code\s+Description)|$)",
+                                    print_text,
+                                    re.DOTALL | re.IGNORECASE,
+                                )
+                                if buyer_match:
+                                    buyer_lines = [
+                                        line.strip()
+                                        for line in buyer_match.group(1).splitlines()
+                                        if line.strip()
+                                    ]
+                                    if buyer_lines:
+                                        customer["customer_name"] = buyer_lines[0]
+                                    buyer_details = buyer_match.group(1)
+                                else:
+                                    buyer_details = print_text
+
+                                tin_match = re.search(
+                                    r"\bTin:\s*([^\s]+)", buyer_details, re.IGNORECASE
+                                )
+                                vat_match = re.search(
+                                    r"\bVAT No:\s*([^\s]+)", buyer_details, re.IGNORECASE
+                                )
+                                if tin_match:
+                                    customer["customer_tin"] = tin_match.group(1)
+                                if vat_match:
+                                    customer["customer_vat"] = vat_match.group(1)
+                        except requests.exceptions.RequestException:
+                            pass
+                        finally:
+                            if print_response is not None:
+                                print_response.close()
+            return status, detail, customer
+        except requests.exceptions.RequestException as error:
+            return "Unverified", f"Could not reach ZIMRA: {error}", {}
+        finally:
+            if response is not None:
+                response.close()
+
+    return "Unverified", "ZIMRA verification exceeded the redirect limit.", {}
+
+@app.route('/api/receipt_verification', methods=['GET'])
+def api_receipt_verification():
+    """Scrape ZIMRA verification pages for the 20 most recently submitted receipts."""
+    try:
+        with db_lock:
+            conn = sqlite3.connect(DB_PATH)
+            try:
+                conn.row_factory = sqlite3.Row
+                receipts = conn.execute(
+                    """SELECT id, invoice_no, fiscal_day_no, receipt_global_no, total_amount,
+                              receipt_currency, verification_code, qr_code, created_at
+                       FROM receipt_audit
+                       ORDER BY created_at DESC, id DESC
+                       LIMIT 20"""
+                ).fetchall()
+            finally:
+                conn.close()
+
+        def verify_receipt(row):
+            receipt = dict(row)
+            status, detail, customer = check_zimra_receipt(receipt.get("qr_code"))
+            receipt["zimra_status"] = status
+            receipt["zimra_detail"] = detail
+            receipt.update(customer)
+            return receipt
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            verified_receipts = list(executor.map(verify_receipt, receipts))
+
+        valid = [receipt for receipt in verified_receipts if receipt["zimra_status"] == "Valid"]
+        invalid = [receipt for receipt in verified_receipts if receipt["zimra_status"] == "Invalid"]
+        unverified = [receipt for receipt in verified_receipts if receipt["zimra_status"] == "Unverified"]
+        return jsonify({
+            "checked_at": datetime.now().isoformat(timespec="seconds"),
+            "scanned_count": len(verified_receipts),
+            "total_success": len(valid),
+            "total_failed": len(invalid),
+            "total_unverified": len(unverified),
+            "recent_success": valid,
+            "recent_failed": invalid,
+            "recent_unverified": unverified,
+        })
+    except Exception as error:
+        app.logger.exception("Could not verify receipt audit records with ZIMRA")
+        return jsonify({"error": str(error)}), 500
 
 @app.route('/api/z_reports', methods=['GET'])
 def api_get_z_reports():
@@ -745,10 +1078,10 @@ def api_get_z_reports():
             with sqlite3.connect(DB_PATH) as conn:
                 conn.row_factory = sqlite3.Row
                 rows = conn.execute("SELECT * FROM z_reports ORDER BY created_at DESC").fetchall()
-        reports = []
-        for row in rows:
-            reports.append({"id": row['id'], "fiscal_day_no": row['fiscal_day_no'], "close_date": row['close_date'], "total_receipts": row['total_receipts'], "total_sales": row['total_sales'], "total_tax": row['total_tax'], "currencies": json.loads(row['currencies_json'])})
-        return jsonify(reports)
+                reports = []
+                for row in rows:
+                    reports.append({"id": row['id'], "fiscal_day_no": row['fiscal_day_no'], "close_date": row['close_date'], "total_receipts": row['total_receipts'], "total_sales": row['total_sales'], "total_tax": row['total_tax'], "currencies": json.loads(row['currencies_json'])})
+                return jsonify(reports)
     except Exception as e: return jsonify({"error": str(e)}), 500
 
 @app.route('/api/z_report/<int:report_id>', methods=['GET'])
@@ -758,9 +1091,9 @@ def api_download_z_report(report_id):
             with sqlite3.connect(DB_PATH) as conn:
                 conn.row_factory = sqlite3.Row
                 row = conn.execute("SELECT * FROM z_reports WHERE id = ?", (report_id,)).fetchone()
-        if not row: return jsonify({"error": "Report not found"}), 404
-        report_data = {"id": row['id'], "fiscal_day_no": row['fiscal_day_no'], "device_id": row['device_id'], "close_date": row['close_date'], "total_receipts": row['total_receipts'], "currencies": json.loads(row['currencies_json']), "zimra_response": json.loads(row['zimra_response_json'])}
-        return Response(json.dumps(report_data, indent=2), mimetype='application/json', headers={'Content-Disposition': f'attachment; filename="ZReport_Day{row["fiscal_day_no"]}.json"'})
+                if not row: return jsonify({"error": "Report not found"}), 404
+                report_data = {"id": row['id'], "fiscal_day_no": row['fiscal_day_no'], "device_id": row['device_id'], "close_date": row['close_date'], "total_receipts": row['total_receipts'], "currencies": json.loads(row['currencies_json']), "zimra_response": json.loads(row['zimra_response_json'])}
+                return Response(json.dumps(report_data, indent=2), mimetype='application/json', headers={'Content-Disposition': f'attachment; filename="ZReport_Day{row["fiscal_day_no"]}.json"'})
     except Exception as e: return jsonify({"error": str(e)}), 500
 
 @app.route('/api/z_report_pdf/<int:report_id>', methods=['GET'])
@@ -770,10 +1103,10 @@ def api_z_report_pdf(report_id):
             with sqlite3.connect(DB_PATH) as conn:
                 conn.row_factory = sqlite3.Row
                 row = conn.execute("SELECT * FROM z_reports WHERE id = ?", (report_id,)).fetchone()
-        if not row: return jsonify({"error": "Report not found"}), 404
-        report_data = {"fiscal_day_no": row['fiscal_day_no'], "device_id": row['device_id'], "close_date": row['close_date'], "total_receipts": row['total_receipts'], "currencies": json.loads(row['currencies_json'])}
-        pdf_buffer = generate_z_report_pdf(report_data); pdf_content = pdf_buffer.getvalue()
-        return Response(pdf_content, mimetype='application/pdf', headers={'Content-Disposition': f'attachment; filename="ZReport_Day{row["fiscal_day_no"]}.pdf"'})
+                if not row: return jsonify({"error": "Report not found"}), 404
+                report_data = {"fiscal_day_no": row['fiscal_day_no'], "device_id": row['device_id'], "close_date": row['close_date'], "total_receipts": row['total_receipts'], "currencies": json.loads(row['currencies_json'])}
+                pdf_buffer = generate_z_report_pdf(report_data); pdf_content = pdf_buffer.getvalue()
+                return Response(pdf_content, mimetype='application/pdf', headers={'Content-Disposition': f'attachment; filename="ZReport_Day{row["fiscal_day_no"]}.pdf"'})
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({"error": str(e)}), 500
@@ -813,18 +1146,12 @@ def api_download_successful_receipts():
             with sqlite3.connect(DB_PATH) as conn:
                 conn.row_factory = sqlite3.Row
                 rows = conn.execute("SELECT invoice_no, receipt_date, receipt_currency, total_amount, verification_code, created_at FROM receipt_audit WHERE status = 'SUCCESS' ORDER BY created_at DESC").fetchall()
-        
-        output = io.StringIO()
-        writer = csv.writer(output)
-        writer.writerow(['Invoice No', 'Date', 'Currency', 'Total Amount', 'Verification Code', 'Created At'])
-        for row in rows:
-            writer.writerow([row['invoice_no'], row['receipt_date'], row['receipt_currency'], row['total_amount'], row['verification_code'], row['created_at']])
-        
-        return Response(
-            output.getvalue(),
-            mimetype='text/csv',
-            headers={'Content-Disposition': 'attachment; filename=successful_receipts.csv'}
-        )
+                output = io.StringIO()
+                writer = csv.writer(output)
+                writer.writerow(['Invoice No', 'Date', 'Currency', 'Total Amount', 'Verification Code', 'Created At'])
+                for row in rows:
+                    writer.writerow([row['invoice_no'], row['receipt_date'], row['receipt_currency'], row['total_amount'], row['verification_code'], row['created_at']])
+                return Response(output.getvalue(), mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=successful_receipts.csv'})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -895,39 +1222,68 @@ def api_analytics():
                     item_rows = conn.execute("SELECT ri.receipt_currency, ri.item_name, SUM(ri.quantity) as total_qty, SUM(ri.total) as total_amount FROM receipt_items ri JOIN receipt_audit ra ON ri.receipt_audit_id = ra.id WHERE ra.status = 'SUCCESS' AND datetime(ri.created_at) >= datetime(?) AND datetime(ri.created_at) < datetime(?) GROUP BY ri.receipt_currency, ri.item_name", (cutoff.strftime("%Y-%m-%d %H:%M:%S"), end_dt.strftime("%Y-%m-%d %H:%M:%S"))).fetchall()
                 else:
                     item_rows = conn.execute("SELECT ri.receipt_currency, ri.item_name, SUM(ri.quantity) as total_qty, SUM(ri.total) as total_amount FROM receipt_items ri JOIN receipt_audit ra ON ri.receipt_audit_id = ra.id WHERE ra.status = 'SUCCESS' AND datetime(ri.created_at) >= datetime(?) GROUP BY ri.receipt_currency, ri.item_name", (cutoff.strftime("%Y-%m-%d %H:%M:%S"),)).fetchall()
-        time_series = defaultdict(lambda: {'USD_sales': 0, 'USD_tax': 0, 'ZWG_sales': 0, 'ZWG_tax': 0})
-        busy_hours = defaultdict(int)
-        for row in rows:
-            created_at = row['created_at']
-            if not created_at: continue
-            try:
-                if ' ' in created_at: ca_dt = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
-                else: ca_dt = datetime.fromisoformat(created_at)
-            except: continue
-            time_key = ca_dt.strftime(group_format)
-            curr = (row['receipt_currency'] or 'USD').upper()
-            total = float(row['total_amount'] or 0)
-            tax = round(total * (15.5 / 115.5), 2)
-            if curr == 'USD': time_series[time_key]['USD_sales'] += total; time_series[time_key]['USD_tax'] += tax
-            else: time_series[time_key]['ZWG_sales'] += total; time_series[time_key]['ZWG_tax'] += tax
-            busy_hours[ca_dt.hour] += 1
-        labels = sorted(time_series.keys())
-        usd_sales = [round(time_series[l]['USD_sales'], 2) for l in labels]
-        usd_tax = [round(time_series[l]['USD_tax'], 2) for l in labels]
-        zwg_sales = [round(time_series[l]['ZWG_sales'], 2) for l in labels]
-        zwg_tax = [round(time_series[l]['ZWG_tax'], 2) for l in labels]
-        products_by_currency = defaultdict(list)
-        for item in item_rows:
-            curr = (item['receipt_currency'] or 'USD').upper()
-            products_by_currency[curr].append({'name': item['item_name'] or 'Unknown', 'qty': float(item['total_qty'] or 0), 'amount': float(item['total_amount'] or 0)})
-        top_products = {}
-        for curr in ['USD', 'ZWG']:
-            prods = products_by_currency.get(curr, [])
-            top_products[curr] = {'by_quantity': sorted(prods, key=lambda x: x['qty'], reverse=True)[:10], 'by_amount': sorted(prods, key=lambda x: x['amount'], reverse=True)[:10]}
-        busy_data = [{"hour": h, "count": busy_hours.get(h, 0)} for h in range(24)]
-        return jsonify({"time_series": {"labels": labels, "usd_sales": usd_sales, "usd_tax": usd_tax, "zwg_sales": zwg_sales, "zwg_tax": zwg_tax}, "top_products": top_products, "busy_hours": busy_data, "range": range_type})
+                time_series = defaultdict(lambda: {'USD_sales': 0, 'USD_tax': 0, 'ZWG_sales': 0, 'ZWG_tax': 0})
+                busy_hours = defaultdict(int)
+                for row in rows:
+                    created_at = row['created_at']
+                    if not created_at: continue
+                    try:
+                        if ' ' in created_at: ca_dt = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
+                        else: ca_dt = datetime.fromisoformat(created_at)
+                    except: continue
+                    time_key = ca_dt.strftime(group_format)
+                    curr = (row['receipt_currency'] or 'USD').upper()
+                    total = float(row['total_amount'] or 0)
+                    tax = round(total * (15.5 / 115.5), 2)
+                    if curr == 'USD': time_series[time_key]['USD_sales'] += total; time_series[time_key]['USD_tax'] += tax
+                    else: time_series[time_key]['ZWG_sales'] += total; time_series[time_key]['ZWG_tax'] += tax
+                    busy_hours[ca_dt.hour] += 1
+                labels = sorted(time_series.keys())
+                usd_sales = [round(time_series[l]['USD_sales'], 2) for l in labels]
+                usd_tax = [round(time_series[l]['USD_tax'], 2) for l in labels]
+                zwg_sales = [round(time_series[l]['ZWG_sales'], 2) for l in labels]
+                zwg_tax = [round(time_series[l]['ZWG_tax'], 2) for l in labels]
+                products_by_currency = defaultdict(list)
+                for item in item_rows:
+                    curr = (item['receipt_currency'] or 'USD').upper()
+                    products_by_currency[curr].append({'name': item['item_name'] or 'Unknown', 'qty': float(item['total_qty'] or 0), 'amount': float(item['total_amount'] or 0)})
+                top_products = {}
+                for curr in ['USD', 'ZWG']:
+                    prods = products_by_currency.get(curr, [])
+                    top_products[curr] = {'by_quantity': sorted(prods, key=lambda x: x['qty'], reverse=True)[:10], 'by_amount': sorted(prods, key=lambda x: x['amount'], reverse=True)[:10]}
+                busy_data = [{"hour": h, "count": busy_hours.get(h, 0)} for h in range(24)]
+                return jsonify({"time_series": {"labels": labels, "usd_sales": usd_sales, "usd_tax": usd_tax, "zwg_sales": zwg_sales, "zwg_tax": zwg_tax}, "top_products": top_products, "busy_hours": busy_data, "range": range_type})
     except Exception as e:
         import traceback; traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/activate_license', methods=['POST'])
+def api_activate_license():
+    data = request.json or {}
+    license_key = data.get('license_key', '').strip()
+    if not license_key:
+        return jsonify({"status": "error", "message": "No license key provided."})
+    from core.license_manager import validate_license_key, save_license_to_db
+    is_valid, message, exp_date = validate_license_key(license_key)
+    if is_valid:
+        save_license_to_db(license_key, exp_date)
+        return jsonify({"status": "success", "message": "License activated successfully.", "expiry": exp_date})
+    else:
+        return jsonify({"status": "error", "message": message})
+
+@app.route('/api/license_status', methods=['GET'])
+def api_license_status():
+    from core.license_manager import get_license_status
+    return jsonify(get_license_status())
+
+@app.route('/api/machine_id', methods=['GET'])
+def api_get_machine_id():
+    """Returns the machine ID for licensing purposes."""
+    try:
+        from core.license_manager import get_machine_id
+        machine_id = get_machine_id()
+        return jsonify({"machine_id": machine_id})
+    except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 def start_auto_scheduler():
@@ -938,22 +1294,18 @@ def start_auto_scheduler():
 
 if __name__ == '__main__':
     print("\n" + "="*60)
-    print("🚀 STARTING FISCALINK SYSTEM...")
+    print("🚀 STARTING AIBES FISCALISATION SYSTEM...")
     print("="*60)
-    
     try:
         print("🔄 Attempting to connect to ZIMRA FDMS...")
         status_code, config_resp = zimra.get_config()
-        
         print(f"📡 ZIMRA API Response Status: {status_code}")
-        
         if status_code == 200 and isinstance(config_resp, dict):
             company_name = config_resp.get('deviceBranchName', 'Unknown Company')
             device_id = config_resp.get('deviceID', zimra.device_id)
             print(f"✅ Successfully connected to ZIMRA FDMS.")
             print(f"🏢 Company Name: {company_name}")
             print(f" Device ID:      {device_id}")
-            
             print("\n" + "="*60)
             print("✅ ACCEPTED TAX IDs FOR THIS DEVICE:")
             print("="*60)
@@ -971,12 +1323,9 @@ if __name__ == '__main__':
             print("️  Could not fetch company details from ZIMRA.")
     except Exception as e:
         print(f"❌ CRITICAL ERROR fetching ZIMRA config: {e}")
-        
     print("="*60)
     print("✅ Server is running on http://0.0.0.0:5000")
     print("="*60 + "\n")
-
     # Start the scheduler for development testing
     start_auto_scheduler()
-
     app.run(host='0.0.0.0', port=5000, debug=False)

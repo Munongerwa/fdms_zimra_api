@@ -16,17 +16,21 @@ def load_external_config():
         "device_serial_number": "UNKNOWN",
         "cert_path": "C:\\certs",
         "zimra_api_url": "https://fdmsapi.zimra.co.zw",
-        "qr_base_url": "https://fdms.zimra.co.zw/"
+        "qr_base_url": "https://fdms.zimra.co.zw/",
+        "printer_name": "", # Added for thermal printer targeting
+        "pos_api_key": ""
     }
     
     if os.path.exists(config_file):
         try:
             with open(config_file, 'r', encoding='utf-8') as f:
                 user_config = json.load(f)
-                # Merge user config with defaults
-                for key in defaults:
-                    if key in user_config:
-                        defaults[key] = user_config[key]
+                
+                # IMPROVED: Merge user config with defaults. 
+                # User config overrides defaults, and new keys in user_config are automatically added.
+                for key, value in user_config.items():
+                    defaults[key] = value
+                    
             print(f"✅ Loaded external configuration from: {config_file}")
         except Exception as e:
             print(f"⚠️ Warning: Could not read config.json: {e}. Using defaults.")
@@ -55,6 +59,12 @@ class Config:
     # ZIMRA FDMS API Endpoints
     ZIMRA_API_URL = ext_config["zimra_api_url"]
     QR_BASE_URL = ext_config["qr_base_url"]
+    
+    # Printer Settings (Used by app.py for 'printto' command)
+    PRINTER_NAME = ext_config.get("printer_name", "")
+    
+    # POS Webhook Security (Used by app.py to authenticate external POS systems)
+    POS_API_KEY = ext_config.get("pos_api_key", "")
     
     # Database and App Settings
     DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "fiscal.db")

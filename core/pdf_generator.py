@@ -6,17 +6,10 @@ from reportlab.lib.units import mm, cm
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, KeepTogether
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, KeepTogether, HRFlowable
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, KeepTogether, HRFlowable
-from reportlab.lib import colors
 import qrcode
-from reportlab.lib.units import mm
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
-from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, HRFlowable
 
 # Try to register a standard font if available, otherwise fallback to Helvetica
 try:
@@ -34,7 +27,6 @@ def generate_qr_code_image(qr_data, size=120):
     qr.add_data(qr_data)
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
-    
     img_byte_arr = io.BytesIO()
     img.save(img_byte_arr, format='PNG')
     img_byte_arr.seek(0)
@@ -60,22 +52,21 @@ def generate_zimra_a4_pdf(pdf_payload, verification_code, qr_code_url, device_id
     receipt = pdf_payload.get('receipt', {})
     receipt_type = receipt.get('receiptType', 'FISCALINVOICE')
     is_credit_note = 'CREDIT' in receipt_type.upper()
-    
+
     # 1. Seller Information
     seller_name = seller_data.get('name', pdf_payload.get('company_name', 'FISCALINK')) if seller_data else 'FISCALINK'
     seller_address = seller_data.get('address', '') if seller_data else ''
-    
     story.append(Paragraph(seller_name, style_company))
     story.append(Paragraph(seller_address, style_address))
     if seller_data:
         story.append(Paragraph(f"Phone: {seller_data.get('phone', '')} | Email: {seller_data.get('email', '')}", style_address))
         story.append(Paragraph(f"VAT Number: {seller_data.get('vat', '')} | TIN: {seller_data.get('tin', '')}", style_address))
     story.append(Spacer(1, 10*mm))
-    
+
     # 2. Document Title
     title = "FISCAL CREDIT NOTE" if is_credit_note else "FISCAL TAX INVOICE"
     story.append(Paragraph(title, style_title))
-    
+
     # 3. Invoice Meta Data (Two Columns)
     meta_data = [
         [Paragraph("<b>Document No:</b>", style_normal), Paragraph(receipt.get('invoiceNo', ''), style_normal),
@@ -93,7 +84,7 @@ def generate_zimra_a4_pdf(pdf_payload, verification_code, qr_code_url, device_id
     ]))
     story.append(meta_table)
     story.append(Spacer(1, 10*mm))
-    
+
     # 4. Buyer Information
     buyer = receipt.get('buyerData', {})
     if buyer:
@@ -112,7 +103,7 @@ def generate_zimra_a4_pdf(pdf_payload, verification_code, qr_code_url, device_id
         buyer_table.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP')]))
         story.append(buyer_table)
         story.append(Spacer(1, 10*mm))
-    
+
     # 5. Items Table
     story.append(Paragraph("ITEMS:", style_header))
     col_widths = [60, 180, 40, 60, 60, 60, 60]
@@ -125,27 +116,21 @@ def generate_zimra_a4_pdf(pdf_payload, verification_code, qr_code_url, device_id
         Paragraph("<b>VAT Amount</b>", style_normal),
         Paragraph("<b>Total(Incl)</b>", style_normal)
     ]]
-    
     total_excl = 0
     total_vat = 0
     total_incl = 0
-    
     for line in receipt.get('receiptLines', []):
         line_total_incl = line.get('receiptLineTotal', 0)
         line_tax_pct = line.get('taxPercent', 0)
-        
-        # Calculate Excl and VAT from Incl total
         if line_tax_pct > 0:
             line_excl = line_total_incl / (1 + (line_tax_pct / 100))
             line_vat = line_total_incl - line_excl
         else:
             line_excl = line_total_incl
             line_vat = 0
-            
         total_excl += line_excl
         total_vat += line_vat
         total_incl += line_total_incl
-        
         table_data.append([
             Paragraph(line.get('receiptLineHSCode', ''), style_normal),
             Paragraph(line.get('receiptLineName', ''), style_normal),
@@ -155,11 +140,8 @@ def generate_zimra_a4_pdf(pdf_payload, verification_code, qr_code_url, device_id
             Paragraph(f"{line_vat:.2f}", style_normal),
             Paragraph(f"{line_total_incl:.2f}", style_normal)
         ])
-        
-    # Totals Row
     table_data.append([Paragraph("", style_normal), Paragraph("", style_normal), Paragraph("", style_normal), Paragraph("", style_normal),
                        Paragraph(f"<b>{total_excl:.2f}</b>", style_normal), Paragraph(f"<b>{total_vat:.2f}</b>", style_normal), Paragraph(f"<b>{total_incl:.2f}</b>", style_normal)])
-    
     items_table = Table(table_data, colWidths=col_widths, repeatRows=1)
     items_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
@@ -173,18 +155,16 @@ def generate_zimra_a4_pdf(pdf_payload, verification_code, qr_code_url, device_id
     ]))
     story.append(items_table)
     story.append(Spacer(1, 10*mm))
-    
+
     # 6. Verification & QR Code
     qr_img_data = generate_qr_code_image(qr_code_url)
     qr_img = Image(qr_img_data, width=80, height=80)
-    
     ver_text = f"Verification Code: {verification_code}<br/>You can manually verify this receipt at<br/><b>{qr_code_url}</b>"
     ver_para = Paragraph(ver_text, style_normal)
-    
     ver_table = Table([[qr_img, ver_para]], colWidths=[100, 300])
     ver_table.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'MIDDLE')]))
     story.append(ver_table)
-    
+
     doc.build(story)
     buffer.seek(0)
     return buffer
@@ -192,17 +172,35 @@ def generate_zimra_a4_pdf(pdf_payload, verification_code, qr_code_url, device_id
 def generate_80mm_thermal_receipt(pdf_payload, verification_code, qr_code_url, device_id, fiscal_day_no, seller_data, serial_number):
     buffer = io.BytesIO()
     
-    # FIX 5: Increased margins to 4mm on left/right for better spacing
-    doc = SimpleDocTemplate(buffer, pagesize=(80*mm, 300*mm), 
+    # ============================================================
+    # FIX 1: DYNAMIC PAGE HEIGHT CALCULATION
+    # Calculates the exact height needed so the printer never creates a blank page gap.
+    # ============================================================
+    receipt = pdf_payload.get('receipt', {})
+    num_items = len(receipt.get('receiptLines', []))
+    buyer = receipt.get('buyerData', {})
+    has_buyer = bool(buyer and buyer.get('buyerRegisterName', ''))
+    
+    # Base height covers: Header, Logo, Seller Info, Doc Meta, Totals, VAT, QR Code, Footer
+    base_height_mm = 210 
+    if has_buyer:
+        base_height_mm += 45 # Add extra space if buyer details are present
+    
+    height_per_item_mm = 12  # Approximate height for each item row (Name + Values)
+    buffer_mm = 20           # Extra buffer at the bottom for the physical paper cutter
+    
+    dynamic_height = (base_height_mm + (num_items * height_per_item_mm) + buffer_mm) * mm
+    
+    doc = SimpleDocTemplate(buffer, pagesize=(80*mm, dynamic_height), 
                             topMargin=2*mm, bottomMargin=2*mm, 
                             leftMargin=4*mm, rightMargin=4*mm)
+    # ============================================================
+
     styles = getSampleStyleSheet()
-    
     s_title = ParagraphStyle('Title', fontSize=9, alignment=TA_CENTER, fontName='Helvetica-Bold', spaceAfter=1*mm, spaceBefore=1*mm)
     s_comp = ParagraphStyle('CompName', fontSize=7, alignment=TA_CENTER, fontName='Helvetica-Bold', spaceAfter=0.5*mm)
     s_center = ParagraphStyle('Center', fontSize=7, fontName='Helvetica', alignment=TA_CENTER, spaceAfter=0.5*mm)
     s_bold_center = ParagraphStyle('BoldCenter', fontSize=7, fontName='Helvetica-Bold', alignment=TA_CENTER, spaceAfter=0.5*mm)
-    
     s_tbl = ParagraphStyle('Tbl', fontSize=7, fontName='Helvetica', spaceAfter=0, leading=8)
     s_tbl_r = ParagraphStyle('TblR', fontSize=7, fontName='Helvetica', alignment=TA_RIGHT, spaceAfter=0, leading=8)
     s_tbl_b_r = ParagraphStyle('TblBR', fontSize=7, fontName='Helvetica-Bold', alignment=TA_RIGHT, spaceAfter=0, leading=8)
@@ -210,12 +208,10 @@ def generate_80mm_thermal_receipt(pdf_payload, verification_code, qr_code_url, d
     s_tbl_9pt_r = ParagraphStyle('Tbl9R', fontSize=9, fontName='Helvetica-Bold', alignment=TA_RIGHT, spaceAfter=0, leading=10)
 
     story = []
-    receipt = pdf_payload.get('receipt', {})
     buyer = receipt.get('buyerData', {})
-    
     receipt_counter = receipt.get('receiptCounter', '')
     receipt_global_no = receipt.get('receiptGlobalNo', '')
-    
+
     def add_dashed_line():
         story.append(HRFlowable(width="100%", thickness=0.5, color=colors.black, spaceAfter=1*mm, spaceBefore=1*mm))
 
@@ -224,7 +220,7 @@ def generate_80mm_thermal_receipt(pdf_payload, verification_code, qr_code_url, d
     logo_path = r"C:\Receipts\logo.png" 
     if os.path.exists(logo_path):
         try:
-            logo_img = Image(logo_path, width=56*mm, height=24*mm)
+            logo_img = Image(logo_path, width=56*mm, height=18*mm)
             logo_table = Table([[logo_img]], colWidths=[72*mm])
             logo_table.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER')]))
             story.append(logo_table)
@@ -238,7 +234,7 @@ def generate_80mm_thermal_receipt(pdf_payload, verification_code, qr_code_url, d
     story.append(Paragraph(f"VAT Number: {seller_data.get('vat', '')}", s_center))
     story.append(Paragraph(f"TIN: {seller_data.get('tin', '')}", s_center))
     add_dashed_line()
-    
+
     doc_data = [
         [Paragraph("DeviceId:", s_tbl), Paragraph(f"{device_id}", s_tbl_r)],
         [Paragraph("Receipt Number:", s_tbl), Paragraph(f"{receipt_counter}", s_tbl_r)],
@@ -251,13 +247,11 @@ def generate_80mm_thermal_receipt(pdf_payload, verification_code, qr_code_url, d
     doc_table.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'), ('LEFTPADDING', (0, 0), (-1, -1), 0), ('RIGHTPADDING', (0, 0), (-1, -1), 0), ('TOPPADDING', (0, 0), (-1, -1), 0), ('BOTTOMPADDING', (0, 0), (-1, -1), 0)]))
     story.append(doc_table)
     add_dashed_line()
-    
+
     buyer_name = buyer.get('buyerRegisterName', '') if buyer else ''
     if buyer_name:
         story.append(Paragraph("Buyer:", ParagraphStyle('BuyerHead', fontSize=7, fontName='Helvetica-Bold', spaceAfter=0.5*mm)))
         add_dashed_line()
-        
-        # FIX 4: Removed duplicate "Buyer Trading Name" and simplified address
         buyer_data = [
             [Paragraph("Buyer Name:", s_tbl), Paragraph(buyer_name, s_tbl_r)],
             [Paragraph("Buyer TIN:", s_tbl), Paragraph(buyer.get('buyerTIN', ''), s_tbl_r)],
@@ -267,9 +261,11 @@ def generate_80mm_thermal_receipt(pdf_payload, verification_code, qr_code_url, d
         ]
         buyer_table = Table(buyer_data, colWidths=[35*mm, 37*mm])
         buyer_table.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'), ('LEFTPADDING', (0, 0), (-1, -1), 0), ('RIGHTPADDING', (0, 0), (-1, -1), 0), ('TOPPADDING', (0, 0), (-1, -1), 0), ('BOTTOMPADDING', (0, 0), (-1, -1), 0)]))
-        story.append(buyer_table)
+        
+        # FIX 2: Wrap buyer table in KeepTogether to prevent it from splitting across pages
+        story.append(KeepTogether([buyer_table]))
         add_dashed_line()
-    
+
     col_widths = [28*mm, 10*mm, 12*mm, 12*mm, 10*mm] 
     table_data = [[
         Paragraph("<b>Description</b>", s_tbl),
@@ -278,48 +274,39 @@ def generate_80mm_thermal_receipt(pdf_payload, verification_code, qr_code_url, d
         Paragraph("<b>Amt Incl</b>", s_tbl_r),
         Paragraph("<b>Vat</b>", s_tbl_r)
     ]]
-
     table_style = [
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ('LEFTPADDING', (0, 0), (-1, -1), 0), ('RIGHTPADDING', (0, 0), (-1, -1), 0),
         ('TOPPADDING', (0, 0), (-1, -1), 0), ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
     ]
-
     total_excl_sum = 0
     total_vat_sum = 0
     total_incl_sum = 0
     row_idx = 1
-
     for line in receipt.get('receiptLines', []):
         line_total_incl = line.get('receiptLineTotal', 0)
         line_tax_pct = line.get('taxPercent', 0)
         line_price_incl = line.get('receiptLinePrice', 0)
-        
         if line_tax_pct > 0:
             line_excl = line_total_incl / (1 + (line_tax_pct / 100))
             line_vat = line_total_incl - line_excl
         else:
             line_excl = line_total_incl
             line_vat = 0
-            
         total_excl_sum += line_excl
         total_vat_sum += line_vat
         total_incl_sum += line_total_incl
-        
         table_data.append([Paragraph(line.get('receiptLineName', ''), s_tbl), "", "", "", ""])
         table_style.append(('SPAN', (0, row_idx), (4, row_idx)))
         row_idx += 1
-        
         table_data.append(["", Paragraph(f"{line.get('receiptLineQuantity', 0):.2f}", s_tbl_r), Paragraph(f"{line_price_incl:.2f}", s_tbl_r), Paragraph(f"{line_total_incl:.2f}", s_tbl_r), Paragraph(f"{line_vat:.2f}", s_tbl_r)])
         row_idx += 1
-        
-    # FIX 3: Totals are NO LONGER added to the product table here.
+
     t = Table(table_data, colWidths=col_widths)
     t.setStyle(TableStyle(table_style))
     story.append(t)
     add_dashed_line()
-    
-    # FIX 3: Totals moved here to the Currency/Change section
+
     totals_data = [
         [Paragraph("<b>Total Excl:</b>", s_tbl), Paragraph(f"{total_excl_sum:.2f}", s_tbl_r)],
         [Paragraph("<b>Total VAT:</b>", s_tbl), Paragraph(f"{total_vat_sum:.2f}", s_tbl_r)],
@@ -332,7 +319,7 @@ def generate_80mm_thermal_receipt(pdf_payload, verification_code, qr_code_url, d
     totals_table.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'), ('LEFTPADDING', (0, 0), (-1, -1), 0), ('RIGHTPADDING', (0, 0), (-1, -1), 0), ('TOPPADDING', (0, 0), (-1, -1), 1*mm), ('BOTTOMPADDING', (0, 0), (-1, -1), 1*mm)]))
     story.append(totals_table)
     add_dashed_line()
-    
+
     vat_data = [[Paragraph("<b>Vat %</b>", s_tbl), Paragraph("<b>Net.Amt</b>", s_tbl_r), Paragraph("<b>VAT Amount</b>", s_tbl_r), Paragraph("<b>Amount</b>", s_tbl_r)]]
     tax_groups = {}
     for line in receipt.get('receiptLines', []):
@@ -349,24 +336,24 @@ def generate_80mm_thermal_receipt(pdf_payload, verification_code, qr_code_url, d
         tax_groups[pct]['net'] += excl
         tax_groups[pct]['vat'] += vat
         tax_groups[pct]['total'] += total
-
     for pct, vals in tax_groups.items():
         vat_data.append([Paragraph(f"{pct:.2f}", s_tbl), Paragraph(f"{vals['net']:.2f}", s_tbl_r), Paragraph(f"{vals['vat']:.2f}", s_tbl_r), Paragraph(f"{vals['total']:.2f}", s_tbl_r)])
-
     vat_table = Table(vat_data, colWidths=[15*mm, 20*mm, 20*mm, 17*mm])
     vat_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0, 0), (-1, -1), 0), ('RIGHTPADDING', (0, 0), (-1, -1), 0), ('TOPPADDING', (0, 0), (-1, -1), 0), ('BOTTOMPADDING', (0, 0), (-1, -1), 0)]))
     story.append(vat_table)
     add_dashed_line()
-    
+
     qr_img_data = generate_qr_code_image(qr_code_url)
     qr_img = Image(qr_img_data, width=32*mm, height=32*mm) 
     qr_table = Table([[qr_img]], colWidths=[72*mm])
     qr_table.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER')]))
     story.append(qr_table)
-    
     story.append(Paragraph(f"Verification code: {verification_code}", s_bold_center))
     story.append(Paragraph("You can verify this receipt manually at", s_center))
     story.append(Paragraph("https://fdms.zimra.co.zw/", s_center))
+    
+    # Final spacer for cutter
+    story.append(Spacer(1, 10*mm)) 
 
     doc.build(story)
     buffer.seek(0)
@@ -377,24 +364,19 @@ def generate_z_report_pdf(z_report_data):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=20*mm, bottomMargin=20*mm, leftMargin=20*mm, rightMargin=20*mm)
     styles = getSampleStyleSheet()
-    
     style_title = ParagraphStyle('Title', parent=styles['Normal'], fontSize=18, fontName=FONT_BOLD, alignment=TA_CENTER, spaceAfter=10)
     style_header = ParagraphStyle('Header', parent=styles['Normal'], fontSize=12, fontName=FONT_BOLD, spaceAfter=5)
     style_normal = ParagraphStyle('Normal', parent=styles['Normal'], fontSize=10, spaceAfter=3)
     
     story = []
-    
     story.append(Paragraph("ZIMRA Z-REPORT", style_title))
     story.append(Spacer(1, 10*mm))
-    
     story.append(Paragraph(f"Fiscal Day No: {z_report_data.get('fiscal_day_no', 'N/A')}", style_normal))
     story.append(Paragraph(f"Device ID: {z_report_data.get('device_id', 'N/A')}", style_normal))
     story.append(Paragraph(f"Closed Date: {z_report_data.get('close_date', 'N/A')}", style_normal))
     story.append(Paragraph(f"Total Receipts: {z_report_data.get('total_receipts', 0)}", style_normal))
     story.append(Spacer(1, 10*mm))
-    
     story.append(Paragraph("CURRENCY BREAKDOWN", style_header))
-    
     currencies = z_report_data.get('currencies', {})
     for curr, data in currencies.items():
         story.append(Paragraph(f"<b>{curr}</b>", style_normal))

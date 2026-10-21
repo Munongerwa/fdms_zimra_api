@@ -1,5 +1,4 @@
 # -*- mode: python ; coding: utf-8 -*-
-
 block_cipher = None
 
 a = Analysis(
@@ -23,6 +22,7 @@ a = Analysis(
         'core.receipt_parser',
         'core.pdf_stamper',
         'core.zimra_validator',
+        'core.license_manager',
         
         # PDF & Image Dependencies
         'pdfplumber',
@@ -65,12 +65,25 @@ a = Analysis(
         'plotly',
         'pystray',
         'plyer',
+        'plyer.platforms.win',
+        'plyer.platforms.win.notification',
         'engineio.async_drivers.threading',
         'simplejson',
         'sqlite3',
         'shutil',
         'threading',
         'subprocess',
+        
+        # Windows Printing & API Dependencies
+        'win32api',
+        'win32print',
+        'win32con',
+        'win32gui',
+        
+        # Standard libraries
+        'hmac',
+        'hashlib',
+        'uuid',
     ],
     hookspath=[],
     hooksconfig={},
@@ -98,7 +111,7 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True, # Set to False if you want to hide the console window completely
+    console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

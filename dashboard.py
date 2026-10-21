@@ -9,54 +9,215 @@ from datetime import datetime, timedelta
 
 API_BASE = "http://localhost:5000"
 
+# ============================================================
+# CUSTOM CSS (Turquoise Theme & Animations)
+# ============================================================
+CUSTOM_CSS = """
+body { background-color: #0e0e14; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 0; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); border-radius: 3px; }
+
+/* Splash Animations */
+.impulsive-logo { animation: impulsive-pulse 1.4s cubic-bezier(.4,0,.2,1) infinite; }
+@keyframes impulsive-pulse { 
+    0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(64, 224, 208, .7); } 
+    50% { transform: scale(1.15); box-shadow: 0 0 30px 15px rgba(64, 224, 208, .3); } 
+    100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(64, 224, 208, .7); } 
+}
+@keyframes fadeSlideUp { from{opacity:0;transform:translateY(30px);} to{opacity:1;transform:translateY(0);} }
+.fade-slide-up { animation: fadeSlideUp .9s ease-out forwards; opacity: 0; }
+.fade-delay-1 { animation-delay: .4s; } .fade-delay-2 { animation-delay: .8s; } .fade-delay-3 { animation-delay: 1.2s; }
+@keyframes dotBlink { 0%,80%,100%{opacity:.2;} 40%{opacity:1;} }
+.dot { animation: dotBlink 1.4s infinite; font-size: 28px; color: #40E0D0; }
+.dot:nth-child(2){animation-delay:.2s;} .dot:nth-child(3){animation-delay:.4s;}
+@keyframes progressFill { from{width:0%;} to{width:100%;} }
+.splash-progress-bar { height: 3px; background: linear-gradient(90deg, #40E0D0, #00CED1, #40E0D0); border-radius: 3px; animation: progressFill 6s ease-in-out forwards; }
+
+/* General UI */
+.btn-fiscal { background: linear-gradient(135deg, #40E0D0, #00CED1) !important; border: none !important; color: #0a0a0a !important; font-weight: 700 !important; border-radius: 12px !important; padding: 10px 20px !important; transition: transform .15s; }
+.btn-fiscal:hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(64, 224, 208, .35); color:#0a0a0a !important; }
+.fiscal-input { background: rgba(255,255,255,.06) !important; border: 1px solid rgba(255,255,255,.1) !important; border-radius: 12px !important; color: #e2e8f0 !important; padding: 10px 14px !important; }
+.fiscal-input:focus { border-color: #40E0D0 !important; box-shadow: 0 0 0 3px rgba(64, 224, 208, .15) !important; color: #e2e8f0 !important; }
+.module-card:hover .module-arrow { transform: translateX(4px); color: #40E0D0; }
+.nav-tabs .nav-link.active { color: #40E0D0 !important; border-bottom: 2px solid #40E0D0 !important; background: transparent !important; }
+.dashboard-card { background: #151821 !important; border: 1px solid rgba(255,255,255,.07) !important; color: #e2e8f0 !important; transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
+.dashboard-card:hover { transform: translateY(-3px); border-color: rgba(64,224,208,.3) !important; box-shadow: 0 12px 28px rgba(0,0,0,.2) !important; }
+.card { background-color: #151821; border-color: rgba(255,255,255,.07); color: #e2e8f0; }
+.card-header { background-color: rgba(255,255,255,.025); border-bottom-color: rgba(255,255,255,.07); color: #edf2f7; }
+.form-label, label { color: #cbd5e1; }
+.form-control, .form-select { background-color: #10131b; border-color: rgba(255,255,255,.12); color: #e2e8f0; }
+.form-control:focus, .form-select:focus { background-color: #10131b; border-color: #40e0d0; color: #e2e8f0; box-shadow: 0 0 0 3px rgba(64,224,208,.15); }
+.form-control::placeholder { color: #748094; }
+.form-select option { background-color: #151821; color: #e2e8f0; }
+.text-muted { color: #929bad !important; }
+.text-primary { color: #54a8ff !important; }
+.table { --bs-table-color: #dce3ed; --bs-table-bg: transparent; --bs-table-border-color: rgba(255,255,255,.08); --bs-table-hover-color: #f1f5f9; --bs-table-hover-bg: rgba(255,255,255,.04); }
+.table > :not(caption) > * > * { background-color: transparent; }
+.table thead th { color: #98a4b7; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+.DateInput, .DateInput_input, .DateRangePickerInput, .DateRangePickerInput_arrow { background: #10131b !important; color: #e2e8f0 !important; }
+.DateInput_input { border-color: rgba(255,255,255,.12) !important; }
+.DateRangePickerInput { border: 1px solid rgba(255,255,255,.12) !important; border-radius: 10px; }
+.DateRangePickerInput_arrow { color: #929bad !important; }
+
+/* Scanner notification toasts */
+.notification-toast {
+    width: 100%;
+    max-height: min(45vh, 360px);
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,.12) !important;
+    border-radius: 14px !important;
+    background: rgba(21,24,33,.96) !important;
+    color: #e2e8f0 !important;
+    box-shadow: 0 16px 40px rgba(0,0,0,.38);
+    backdrop-filter: blur(14px);
+}
+.notification-toast .toast-header {
+    gap: 8px;
+    align-items: flex-start;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+    background: rgba(255,255,255,.04);
+    color: #f1f5f9;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.4;
+}
+.notification-toast .toast-header strong {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+.notification-toast .toast-header .btn-close {
+    flex: 0 0 auto;
+    filter: invert(1) grayscale(100%) brightness(180%);
+}
+.notification-toast .toast-body {
+    max-height: calc(min(45vh, 360px) - 56px);
+    overflow-y: auto;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+    color: #cbd5e1;
+    font-size: 13px;
+    line-height: 1.55;
+}
+.notification-toast-success { border-left: 3px solid #40e0a0 !important; }
+.notification-toast-warning { border-left: 3px solid #ffc857 !important; }
+.notification-toast-error { border-left: 3px solid #ff6b6b !important; }
+@media (max-width: 575.98px) {
+    .notification-toast .toast-header,
+    .notification-toast .toast-body { font-size: 12px; }
+}
+"""
+
 app = dash.Dash(
     __name__,
-    external_stylesheets=[dbc.themes.BOOTSTRAP, dbc.icons.FONT_AWESOME],
+    external_stylesheets=[
+        dbc.themes.BOOTSTRAP,
+        "https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css",
+    ],
     suppress_callback_exceptions=True,
     assets_folder='assets'
 )
-app.title = "FISCALINK"
+app.title = "AIBES FISCALISATION"
+
+# Inject Custom CSS into the HTML head
+app.index_string = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    {{%metas%}}
+    <title>AIBES FISCALISATION</title>
+    {{%favicon%}}
+    {{%css%}}
+    <style>{CUSTOM_CSS}</style>
+</head>
+<body>
+    {{%app_entry%}}
+    <footer>
+        {{%config%}}
+        {{%scripts%}}
+        {{%renderer%}}
+    </footer>
+</body>
+</html>
+"""
 
 COLORS = {
     "primary": "#0d6efd", "info": "#0dcaf0", "dark": "#1a1a2e", "darker": "#16213e",
     "sidebar": "#0f0f1e", "sidebar_hover": "#1e1e3f", "light": "#f8f9fa",
     "success": "#198754", "danger": "#dc3545", "warning": "#ffc107",
-    "text_muted": "#6c757d", "border": "#2a2a4a"
+    "text_muted": "#6c757d", "border": "#2a2a4a",
+    "turquoise": "#40E0D0" 
 }
 
 SIDEBAR_WIDTH_EXPANDED = "250px"
-SIDEBAR_WIDTH_COLLAPSED = "70px"
+SIDEBAR_WIDTH_COLLAPSED = "0px"
 
 app.layout = html.Div([
+    # ============================================================
+    # SPLASH SCREEN (Fixed Overlay, 6 Seconds, "A" Logo)
+    # ============================================================
     html.Div(
         id="splash-screen",
         children=[
-            html.Div(children=[
-                html.Img(src="assets/logo.png", style={"width": "200px", "height": "200px", "objectFit": "contain", "marginBottom": "30px", "animation": "pulse 2s infinite"}),
-                html.H2("FISCALINK", style={"color": COLORS["primary"], "fontWeight": "bold", "fontSize": "36px", "marginBottom": "20px"}),
-                html.P("Initializing System...", style={"color": "#888", "fontSize": "16px", "marginBottom": "30px"}),
-                html.Div(dbc.Spinner(size="lg", color="primary"), style={"display": "flex", "justifyContent": "center", "alignItems": "center"})
-            ], style={"display": "flex", "flexDirection": "column", "justifyContent": "center", "alignItems": "center", "textAlign": "center", "width": "100%", "height": "100%"})
+            dcc.Interval(id="splash-timer", interval=6000, max_intervals=1),
+            html.Div([
+                html.Div("A", className="fw-bold impulsive-logo", style={
+                    "background": "#40E0D0", "color": "#0a0a0a", 
+                    "width": "80px", "height": "80px", "lineHeight": "80px", 
+                    "textAlign": "center", "borderRadius": "16px", 
+                    "fontSize": "40px", "marginBottom": "24px",
+                    "margin": "0 auto"
+                }),
+                html.H1("AIBES FISCALISATION", className="fade-slide-up fade-delay-1", style={
+                    "color": "#f1f5f9", "fontWeight": "800", "fontSize": "42px", "marginBottom": "4px"
+                }),
+                html.P("Fiscal Management System", className="fade-slide-up fade-delay-2", style={
+                    "color": "rgba(255,255,255,.45)", "fontSize": "16px", "letterSpacing": "3px", 
+                    "textTransform": "uppercase", "marginBottom": "48px"
+                }),
+                html.Div([html.Span(".", className="dot") for _ in range(3)], className="fade-slide-up fade-delay-3", style={"textAlign": "center"}),
+                html.Div(className="splash-progress-bar", style={
+                    "position": "fixed", "bottom": "40px", "left": "50%", 
+                    "transform": "translateX(-50%)", "width": "200px"
+                }),
+            ], style={
+                "display": "flex", "flexDirection": "column", "justifyContent": "center", 
+                "alignItems": "center", "height": "100vh", "width": "100%"
+            })
         ],
-        style={"position": "fixed", "top": 0, "left": 0, "width": "100vw", "height": "100vh", "backgroundColor": "#0a0a15", "zIndex": 9999, "display": "flex", "justifyContent": "center", "alignItems": "center"}
+        style={
+            "position": "fixed", "top": "0", "left": "0", 
+            "width": "100vw", "height": "100vh", 
+            "backgroundColor": "#0b0b10", # Solid background to hide everything behind
+            "zIndex": 9999, "display": "flex",
+            "overflow": "hidden"
+        }
     ),
-    dcc.Interval(id="splash-interval", interval=4000, max_intervals=1),
+    # Session storage ensures this persists across page reloads/navigations in the same tab
     dcc.Store(id="splash-shown", data=False, storage_type='session'),
 
     html.Div(
-        id="main-app",
+        id="main-app", 
         children=[
             html.Div(id="appbar", children=[
                 html.Div([
-                    html.I(id="menu-icon", className="fas fa-bars", style={"fontSize": "22px", "cursor": "pointer", "color": "white", "marginRight": "15px", "padding": "8px", "borderRadius": "4px"}),
-                    html.Img(src="assets/logo.png", style={"height": "35px", "marginRight": "10px"}),
-                    html.H4("FISCALINK", style={"color": "white", "margin": 0, "fontSize": "20px", "fontWeight": "600"})
+                    html.I(id="menu-icon", className="bi bi-list", style={"fontSize": "22px", "cursor": "pointer", "color": "white", "marginRight": "15px", "padding": "8px", "borderRadius": "4px"}),
+                    # Updated Appbar Logo to match Splash Screen
+                    html.Div("A", style={
+                        "background": "#40E0D0", "color": "#0a0a0a",
+                        "width": "32px", "height": "32px", "lineHeight": "32px",
+                        "textAlign": "center", "borderRadius": "8px",
+                        "fontSize": "18px", "fontWeight": "bold", "marginRight": "10px"
+                    }),
+                    html.H4("AIBES FISCALISATION", style={"color": "white", "margin": 0, "fontSize": "20px", "fontWeight": "600"})
                 ], style={"display": "flex", "alignItems": "center"}),
                 html.Div(id="appbar-status-display", children=[dbc.Spinner(size="sm", color="light"), " Connecting..."], style={"color": "white", "display": "flex", "alignItems": "center", "gap": "10px", "fontSize": "14px", "backgroundColor": "rgba(255,255,255,0.1)", "padding": "8px 16px", "borderRadius": "20px"})
-            ], style={"position": "fixed", "top": 0, "left": 0, "width": "100%", "height": "60px", "backgroundColor": COLORS["dark"], "display": "flex", "justifyContent": "space-between", "alignItems": "center", "padding": "0 20px", "zIndex": 1000, "boxShadow": "0 2px 10px rgba(0,0,0,0.3)", "borderBottom": f"1px solid {COLORS['border']}"},),
+            ], style={"position": "fixed", "top": 0, "left": 0, "width": "100%", "height": "60px", "backgroundColor": COLORS["dark"], "display": "flex", "justifyContent": "space-between", "alignItems": "center", "padding": "0 20px", "zIndex": 1000, "boxShadow": "0 2px 10px rgba(0,0,0,0.3)", "borderBottom": f"1px solid {COLORS['border']}"}),
 
             html.Div(id="sidebar", children=[html.Div(id="sidebar-nav-items", children=[], style={"width": "100%"})], style={"position": "fixed", "top": "60px", "left": 0, "bottom": 0, "width": SIDEBAR_WIDTH_COLLAPSED, "backgroundColor": COLORS["sidebar"], "padding": "10px 0", "transition": "width 0.3s ease", "overflow": "hidden", "zIndex": 900, "borderRight": f"1px solid {COLORS['border']}"}),
-            html.Div(id="page-content", style={"marginLeft": SIDEBAR_WIDTH_COLLAPSED, "marginTop": "60px", "padding": "20px", "transition": "margin-left 0.3s ease", "minHeight": "calc(100vh - 60px)", "backgroundColor": "#f0f2f5"}),
+            html.Div(id="page-content", style={"marginLeft": SIDEBAR_WIDTH_COLLAPSED, "marginTop": "60px", "padding": "20px", "transition": "margin-left 0.3s ease", "minHeight": "calc(100vh - 60px)", "backgroundColor": "#0e0e14"}),
 
             dcc.Location(id="url", refresh=False),
             dcc.Store(id="sidebar-state", data="collapsed"),
@@ -69,22 +230,22 @@ app.layout = html.Div([
             dcc.Download(id="download-zreport-pdf"),
             dcc.Download(id="download-success-csv"),
             
-            # MOVED HERE: Toast Notifications & Polling Components (Must be in main layout)
+            # Toast Notifications & Polling Components
             html.Div([
-                dbc.Toast(id="toast-success", header="✅ Successfully Processed", is_open=False, duration=5000),
-                dbc.Toast(id="toast-warning", header="⚠️ Processing Failed", is_open=False, duration=7000),
-                dbc.Toast(id="toast-error", header="❌ System Error", is_open=False, duration=7000),
+                dbc.Toast(id="toast-success", header="✅ Successfully Processed", is_open=False, duration=5000, class_name="notification-toast notification-toast-success"),
+                dbc.Toast(id="toast-warning", header="⚠️ Processing Failed", is_open=False, duration=7000, class_name="notification-toast notification-toast-warning"),
+                dbc.Toast(id="toast-error", header="❌ System Error", is_open=False, duration=7000, class_name="notification-toast notification-toast-error"),
             ], style={
                 "position": "fixed", 
-                "top": "80px", 
-                "right": "20px", 
+                "top": "clamp(16px, 8vh, 80px)", 
+                "right": "clamp(12px, 2vw, 20px)", 
                 "zIndex": 9999, 
                 "display": "flex", 
                 "flexDirection": "column", 
                 "gap": "10px", 
-                "width": "350px"
+                "width": "min(420px, calc(100vw - 24px))"
             }),
-            
+              
             dcc.Interval(id="notification-interval", interval=3000, n_intervals=0),
             dcc.Store(id="last-seen-log-id", data=0),
             
@@ -95,62 +256,101 @@ app.layout = html.Div([
             dcc.Store(id="print-command-store"),
             html.Div(id="dummy-print", style={"display": "none"})
         ],
-        style={"display": "none"}
+        style={"display": "none"} # Hidden until splash finishes
     )
 ])
 
-app.index_string = '''
-<!DOCTYPE html>
-<html>
-    <head>
-        {%metas%}<title>{%title%}</title>
-        <link rel="icon" href="/assets/favicon.ico">
-        {%favicon%}{%css%}
-        <style>
-            @keyframes pulse { 0% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.05); opacity: 0.8; } 100% { transform: scale(1); opacity: 1; } }
-            .sidebar-nav-link { display: flex; align-items: center; padding: 12px 20px; color: #b0b0c0; text-decoration: none; transition: all 0.2s; border-left: 3px solid transparent; margin: 4px 0; }
-            .sidebar-nav-link:hover { background-color: ''' + COLORS["sidebar_hover"] + '''; color: white; border-left-color: ''' + COLORS["primary"] + '''; }
-            .sidebar-nav-link.active { background-color: ''' + COLORS["sidebar_hover"] + '''; color: ''' + COLORS["primary"] + '''; border-left-color: ''' + COLORS["primary"] + '''; }
-            .sidebar-nav-link i { font-size: 20px; min-width: 30px; text-align: center; }
-            .sidebar-nav-link span { margin-left: 12px; font-size: 14px; white-space: nowrap; }
-        </style>
-    </head>
-    <body>{%app_entry%}<footer>{%config%}{%scripts%}{%renderer%}</footer></body>
-</html>
-'''
-
-@callback([Output("splash-screen", "style"), Output("main-app", "style"), Output("splash-shown", "data")], Input("splash-interval", "n_intervals"), State("splash-shown", "data"))
+# ============================================================
+# SPLASH SCREEN CALLBACK
+# ============================================================
+@callback(
+    [Output("splash-screen", "style"), Output("main-app", "style"), Output("splash-shown", "data")], 
+    Input("splash-timer", "n_intervals"), 
+    State("splash-shown", "data")
+)
 def hide_splash(n, already_shown):
-    if already_shown: return {"display": "none"}, {"display": "block"}, True
-    if n is not None and n > 0: return {"display": "none"}, {"display": "block"}, True
+    """
+    If already_shown is True (from session store), keep splash hidden immediately.
+    If not shown yet, wait for timer (n > 0) then hide.
+    """
+    if already_shown:
+        return {"display": "none"}, {"display": "block"}, True
+    
+    if n is not None and n > 0:
+        return {"display": "none"}, {"display": "block"}, True
+        
     return {"display": "flex"}, {"display": "none"}, False
 
+# ============================================================
+# SIDEBAR & NAVIGATION LOGIC
+# ============================================================
 def build_sidebar_items(state, current_path):
     items = [
-        {"path": "/", "icon": "fa-home", "label": "Home"}, 
-        {"path": "/transactions", "icon": "fa-file-invoice", "label": "Transactions"}, 
-        {"path": "/fiscal-day", "icon": "fa-calendar-day", "label": "Fiscal Day"}, 
-        {"path": "/scanner", "icon": "fa-folder-open", "label": "Folder Scanner"},
-        {"path": "/analytics", "icon": "fa-chart-line", "label": "Analytics"},
-        {"path": "/pos", "icon": "fa-cash-register", "label": "POS"}, 
-        {"path": "/audit", "icon": "fa-clipboard-list", "label": "Audit & Z-Reports"}
+        {"path": "/", "icon": "bi-house-door", "label": "Home"},
+        {"path": "/transactions", "icon": "bi-receipt", "label": "Transactions"},
+        {"path": "/fiscal-day", "icon": "bi-calendar3", "label": "Fiscal Day"},
+        {"path": "/scanner", "icon": "bi-folder2-open", "label": "Folder Scanner"},
+        {"path": "/analytics", "icon": "bi-graph-up-arrow", "label": "Analytics"},
+        {"path": "/pos", "icon": "bi-shop", "label": "POS"},
+        {"path": "/audit", "icon": "bi-clipboard-data", "label": "Audit & Z-Reports"}
     ]
+    
+    # Define Theme Colors
+    default_color = "#ffffff"  # White for inactive options
+    active_color = "#40E0D0"   # Turquoise Blue for the selected option
+    
     nav_items = []
     for item in items:
         is_active = current_path == item["path"]
         active_class = "sidebar-nav-link active" if is_active else "sidebar-nav-link"
+        
+        # Determine colors and font weight based on active state
+        icon_color = active_color if is_active else default_color
+        text_color = active_color if is_active else default_color
+        text_weight = "bold" if is_active else "normal"
+        
         if state == "collapsed":
-            nav_items.append(html.A([html.I(className=f"fas {item['icon']}")], href=item["path"], className=active_class, style={"justifyContent": "center", "padding": "15px 0"}, title=item["label"]))
+            nav_items.append(html.A(
+                [html.I(className=f"bi {item['icon']}", style={"color": icon_color})],
+                href=item["path"], 
+                className=active_class, 
+                style={"display": "block", "padding": "15px 0", "textAlign": "center", "textDecoration": "none"}, 
+                title=item["label"]
+            ))
         else:
-            nav_items.append(html.A([html.I(className=f"fas {item['icon']}"), html.Span(item["label"])], href=item["path"], className=active_class))
-    return nav_items
+            nav_items.append(html.A(
+                [
+                    html.I(className=f"bi {item['icon']}", style={"color": icon_color, "width": "20px"}),
+                    html.Span(item["label"], style={"marginLeft": "10px", "color": text_color, "fontWeight": text_weight})
+                ], 
+                href=item["path"], 
+                className=active_class,
+                style={"display": "flex", "alignItems": "center", "padding": "12px 20px", "textDecoration": "none"}
+            ))
+            
+    return html.Div(nav_items, style={"display": "flex", "flexDirection": "column", "width": "100%"})
 
-@callback([Output("sidebar", "style"), Output("page-content", "style"), Output("sidebar-state", "data"), Output("sidebar-nav-items", "children")], [Input("menu-icon", "n_clicks"), Input("url", "pathname")], [State("sidebar-state", "data")])
+@callback([Output("sidebar", "style"), Output("page-content", "style"), Output("sidebar-state", "data"),  Output("sidebar-nav-items", "children")], [Input("menu-icon", "n_clicks"), Input("url", "pathname")], [State("sidebar-state", "data")])
 def toggle_sidebar(n_clicks, pathname, current_state):
     if pathname is None: pathname = "/"
     new_state = "expanded" if (n_clicks is not None and n_clicks > 0 and current_state == "collapsed") else "collapsed" if (n_clicks is not None and n_clicks > 0) else current_state
-    sidebar_style = {"position": "fixed", "top": "60px", "left": 0, "bottom": 0, "width": SIDEBAR_WIDTH_EXPANDED if new_state == "expanded" else SIDEBAR_WIDTH_COLLAPSED, "backgroundColor": COLORS["sidebar"], "padding": "10px 0", "transition": "width 0.3s ease", "overflow": "hidden", "zIndex": 900, "borderRight": f"1px solid {COLORS['border']}", "display": "flex", "flexDirection": "column"}
-    content_style = {"marginLeft": SIDEBAR_WIDTH_EXPANDED if new_state == "expanded" else SIDEBAR_WIDTH_COLLAPSED, "marginTop": "60px", "padding": "20px", "transition": "margin-left 0.3s ease", "minHeight": "calc(100vh - 60px)", "backgroundColor": "#f0f2f5"}
+    sidebar_style = {
+        "position": "fixed", 
+        "top": "60px", 
+        "left": 0, 
+        "bottom": 0, 
+        "width": SIDEBAR_WIDTH_EXPANDED if new_state == "expanded" else SIDEBAR_WIDTH_COLLAPSED, 
+        "backgroundColor": COLORS["sidebar"], 
+        "padding": "10px 0", 
+        "transition": "width 0.3s ease", 
+        "overflow": "hidden", 
+        "zIndex": 900, 
+        "borderRight": f"1px solid {COLORS['border']}", 
+        "display": "flex", 
+        "flexDirection": "column",
+        "overflowY": "auto"
+    }
+    content_style = {"marginLeft": SIDEBAR_WIDTH_EXPANDED if new_state == "expanded" else SIDEBAR_WIDTH_COLLAPSED, "marginTop": "60px", "padding": "20px", "transition": "margin-left 0.3s ease", "minHeight": "calc(100vh - 60px)", "backgroundColor": "#0e0e14"}
     return sidebar_style, content_style, new_state, build_sidebar_items(new_state, pathname)
 
 @callback(Output("appbar-status-display", "children"), Input("status-refresh", "n_intervals"))
@@ -160,9 +360,9 @@ def update_appbar_status(n):
         data = res.json().get("zimra_response", {})
         status = data.get("fiscalDayStatus", "Unknown")
         color = COLORS["success"] if "Opened" in status else COLORS["text_muted"] if "Closed" in status else COLORS["warning"]
-        icon = "fa-check-circle" if "Opened" in status else "fa-lock" if "Closed" in status else "fa-exclamation-triangle"
-        return [html.I(className=f"fas {icon}", style={"color": color}), html.Span(f"Device: {status}", style={"fontWeight": "bold"})]
-    except Exception: return [html.I(className="fas fa-wifi", style={"color": COLORS["danger"]}), html.Span("Offline", style={"color": COLORS["danger"]})]
+        icon = "bi-check-circle" if "Opened" in status else "bi-lock" if "Closed" in status else "bi-exclamation-triangle"
+        return [html.I(className=f"bi {icon}", style={"color": color}), html.Span(f"Device: {status}", style={"fontWeight": "bold"})]
+    except Exception: return [html.I(className="bi bi-wifi-off", style={"color": COLORS["danger"]}), html.Span("Offline", style={"color": COLORS["danger"]})]
 
 @callback(Output("page-content", "children"), Input("url", "pathname"))
 def render_page(pathname):
@@ -174,6 +374,38 @@ def render_page(pathname):
     elif pathname == "/audit": return get_audit_page()
     else: return get_home_page()
 
+# ============================================================
+# PAGE CONTENT FUNCTIONS
+# ============================================================
+def page_layout(title, description, icon, children):
+    return html.Div([
+        html.Div([
+            html.Div(
+                html.I(className=f"bi {icon}", style={"fontSize": "23px", "color": "#40e0a0"}),
+                style={
+                    "width": "52px", "height": "52px", "display": "flex",
+                    "alignItems": "center", "justifyContent": "center",
+                    "borderRadius": "15px", "backgroundColor": "rgba(64,224,160,.11)",
+                    "flexShrink": 0,
+                },
+            ),
+            html.Div([
+                html.H1(title, style={
+                    "fontSize": "clamp(23px, 2.5vw, 30px)", "fontWeight": "750",
+                    "letterSpacing": "-.025em", "color": "#f1f5f9", "margin": "0 0 5px",
+                }),
+                html.P(description, style={"fontSize": "13px", "color": "#929bad", "margin": 0}),
+            ]),
+        ], style={
+            "display": "flex", "alignItems": "center", "gap": "16px",
+            "marginBottom": "28px",
+        }),
+        *children,
+    ], style={
+        "backgroundColor": "#0e0e14", "color": "#e2e8f0",
+        "margin": "-20px", "padding": "28px", "minHeight": "calc(100vh - 60px)",
+    })
+
 def get_home_page():
     try:
         res = requests.get(f"{API_BASE}/api/device_details", timeout=5)
@@ -181,34 +413,225 @@ def get_home_page():
     except: 
         details = {"company_name": "Unknown", "device_id": "N/A", "serial_number": "N/A", "vat_number": "N/A", "taxpayer_tin": "N/A", "fiscal_day_no": "N/A", "receipt_global_no": "N/A", "status": "Offline"}
     
-    status_color = COLORS["success"] if "Active" in details.get("status", "") else COLORS["danger"]
+    try:
+        res_license = requests.get(f"{API_BASE}/api/license_status", timeout=2)
+        license_data = res_license.json()
+    except:
+        license_data = {"status": "ERROR", "message": "Could not fetch license status.", "is_valid": False, "days_left": 0}
     
-    def make_card(title, value, icon, color=COLORS["primary"]):
-        return dbc.Col(dbc.Card([dbc.CardBody([html.Div([html.I(className=f"fas {icon}", style={"fontSize": "28px", "color": color, "marginRight": "15px"}), html.Div([html.H6(title, className="text-muted mb-1", style={"fontSize": "12px", "textTransform": "uppercase"}), html.H4(str(value), className="mb-0", style={"fontWeight": "bold"})])], style={"display": "flex", "alignItems": "center"})])], className="mb-3", style={"border": "none", "boxShadow": "0 2px 8px rgba(0,0,0,0.08)", "borderRadius": "10px"}), md=6, lg=4)
+    try:
+        res_machine = requests.get(f"{API_BASE}/api/machine_id", timeout=2)
+        machine_data = res_machine.json()
+        machine_id = machine_data.get("machine_id", "N/A")
+    except:
+        machine_id = "N/A"
+
+    status_color = COLORS["success"] if "Active" in details.get("status", "") else COLORS["danger"]
+    license_status_color = COLORS["success"] if license_data.get("status") == "VALID" else COLORS["danger"]
+    
+    days_left = license_data.get('days_left', 0)
+    if license_data.get('status') == 'VALID':
+        days_text = f" {days_left} Days Left"
+        days_color = COLORS["success"] if days_left > 7 else (COLORS["warning"] if days_left > 0 else COLORS["danger"])
+    else:
+        days_text = "⏳ Expired"
+        days_color = COLORS["danger"]
+
+    company_name = details.get("company_name") or "Your company"
+    hour = datetime.now().hour
+    greeting = "Good morning" if hour < 12 else "Good afternoon" if hour < 18 else "Good evening"
+    today = datetime.now().strftime("%A, %B %d, %Y")
+
+    def make_card(title, value, icon, color):
+        return dbc.Col(
+            dbc.Card(
+                dbc.CardBody([
+                    html.Div(
+                        html.I(className=f"bi {icon}", style={"fontSize": "17px", "color": color}),
+                        style={
+                            "width": "36px", "height": "36px", "display": "flex",
+                            "alignItems": "center", "justifyContent": "center",
+                            "borderRadius": "11px", "backgroundColor": f"{color}20",
+                            "flexShrink": 0,
+                        },
+                    ),
+                    html.Div([
+                        html.Div(title, style={
+                            "fontSize": "9px", "fontWeight": "700", "letterSpacing": ".07em",
+                            "textTransform": "uppercase", "color": "#8993a5", "marginBottom": "4px",
+                        }),
+                        html.Div(str(value), style={
+                            "fontSize": "14px", "fontWeight": "650", "color": "#f1f5f9",
+                            "overflowWrap": "anywhere",
+                        }),
+                    ], style={"minWidth": 0}),
+                ], style={"display": "flex", "alignItems": "center", "gap": "11px", "padding": "12px 14px"}),
+                className="dashboard-card h-100",
+                style={"borderRadius": "13px"},
+            ),
+            xs=12, sm=6, xl=3, className="mb-2",
+        )
+
+    def section_heading(title, description):
+        return html.Div([
+            html.H4(title, style={"fontSize": "16px", "fontWeight": "700", "color": "#edf2f7", "margin": 0}),
+            html.P(description, style={"fontSize": "11px", "color": "#8791a3", "margin": "3px 0 0"}),
+        ], className="mb-2")
 
     return html.Div([
-        html.H2("Dashboard Overview", className="mb-4", style={"fontWeight": "600"}),
-        dbc.Card([dbc.CardBody([html.Div([html.I(className="fas fa-circle", style={"color": status_color, "marginRight": "10px", "fontSize": "14px"}), html.H4(f"Device Status: {details.get('status', 'Unknown')}", style={"display": "inline-block", "margin": 0})])])], className="mb-4", style={"borderLeft": f"4px solid {status_color}", "borderRadius": "10px"}),
-        dbc.Row([make_card("Company Name", details.get("company_name", "N/A"), "fa-building", COLORS["primary"]), make_card("Device ID", details.get("device_id", "N/A"), "fa-microchip", COLORS["success"]), make_card("Serial Number", details.get("serial_number", "N/A"), "fa-barcode", COLORS["warning"])]),
-        dbc.Row([make_card("VAT Number", details.get("vat_number", "N/A"), "fa-file-invoice", "#6f42c1"), make_card("TaxPayer TIN", details.get("taxpayer_tin", "N/A"), "fa-id-card", COLORS["danger"])]),
-        dbc.Row([make_card("Current Fiscal Day", details.get("fiscal_day_no", "N/A"), "fa-calendar-day", COLORS["info"]), make_card("Receipt Global No", details.get("receipt_global_no", "N/A"), "fa-receipt", COLORS["primary"])]),
-        html.H4("Quick Actions", className="mt-4 mb-3", style={"fontWeight": "600"}),
+        html.Div([
+            html.Div([
+                html.Div(greeting, style={
+                    "fontSize": "9px", "fontWeight": "800", "letterSpacing": ".14em",
+                    "textTransform": "uppercase", "color": "#e0f0ea", "marginBottom": "5px",
+                }),
+                html.H1(f"Welcome back, {company_name}", style={
+                    "fontSize": "clamp(20px, 2.2vw, 27px)", "fontWeight": "750",
+                    "letterSpacing": "-.03em", "color": "#f1f5f9", "margin": "0 0 4px",
+                }),
+                html.P(today, style={"fontSize": "11px", "color": "#d1d8e2", "margin": 0}),
+            ]),
+            html.Div(
+                html.I(className="bi bi-hand-wave-fill", style={"fontSize": "28px", "color": "#40e0a0"}),
+                style={
+                    "width": "52px", "height": "52px", "display": "flex", "alignItems": "center",
+                    "justifyContent": "center", "borderRadius": "16px",
+                    "backgroundColor": "rgba(255,200,87,.10)", "flexShrink": 0,
+                },
+            ),
+        ], style={
+            "display": "flex", "alignItems": "center", "justifyContent": "space-between",
+            "gap": "16px", "padding": "16px 20px", "marginBottom": "16px",
+            "border": "1px solid rgba(64,224,160,.16)", "borderRadius": "20px",
+            "background": "linear-gradient(115deg, rgba(22,43,39,.96), rgba(17,21,31,.98) 68%)",
+        }),
+        html.Div([
+            html.Div([
+                html.Div([
+                    html.Span(className="bi bi-circle-fill", style={
+                        "fontSize": "9px", "color": status_color,
+                    }),
+                    html.Span("DEVICE", style={
+                        "fontSize": "9px", "fontWeight": "800", "letterSpacing": ".1em",
+                        "color": "#8993a5",
+                    }),
+                ], style={"display": "flex", "alignItems": "center", "gap": "7px", "marginBottom": "5px"}),
+                html.Div(details.get("status", "Unknown"), style={
+                    "fontSize": "16px", "fontWeight": "700", "color": "#f1f5f9",
+                }),
+            ]),
+            html.Span(details.get("status", "Unknown"), style={
+                "padding": "5px 9px", "borderRadius": "999px",
+                "color": status_color, "backgroundColor": f"{status_color}18",
+                "fontSize": "10px", "fontWeight": "700",
+            }),
+        ], className="dashboard-card mb-2", style={
+            "display": "flex", "alignItems": "center", "justifyContent": "space-between",
+            "gap": "12px", "padding": "11px 16px", "borderRadius": "13px",
+        }),
+
+        section_heading("Device overview", "Your registered fiscal device and company details"),
         dbc.Row([
-            dbc.Col(dbc.Card([dbc.CardBody([html.I(className="fas fa-file-invoice", style={"fontSize": "32px", "color": COLORS["primary"], "marginBottom": "10px"}), html.H5("New Invoice"), html.P("Create a new fiscal invoice", className="text-muted"), dbc.Button("Go to Transactions", href="/transactions", color="primary", className="w-100")])], className="text-center", style={"cursor": "pointer", "borderRadius": "10px"}), md=4),
-            dbc.Col(dbc.Card([dbc.CardBody([html.I(className="fas fa-folder-open", style={"fontSize": "32px", "color": COLORS["success"], "marginBottom": "10px"}), html.H5("Folder Scanner"), html.P("Auto-process receipts", className="text-muted"), dbc.Button("Open Scanner", href="/scanner", color="success", className="w-100")])], className="text-center", style={"cursor": "pointer", "borderRadius": "10px"}), md=4),
-            dbc.Col(dbc.Card([dbc.CardBody([html.I(className="fas fa-chart-line", style={"fontSize": "32px", "color": COLORS["info"], "marginBottom": "10px"}), html.H5("Analytics"), html.P("View sales insights", className="text-muted"), dbc.Button("Open Analytics", href="/analytics", color="info", className="w-100")])], className="text-center", style={"cursor": "pointer", "borderRadius": "10px"}), md=4),
+            make_card("Company name", company_name, "bi-building", "#40e0a0"),
+            make_card("Device ID", details.get("device_id", "N/A"), "bi-cpu", "#54a8ff"),
+            make_card("Serial number", details.get("serial_number", "N/A"), "bi-upc-scan", "#ffc857"),
+            make_card("VAT number", details.get("vat_number", "N/A"), "bi-receipt", "#b38cff"),
+            make_card("Taxpayer TIN", details.get("taxpayer_tin", "N/A"), "bi-person-vcard", "#ff719a"),
+            make_card("Machine ID", machine_id, "bi-pc-display", "#36c9d5"),
+            make_card("Current fiscal day", details.get("fiscal_day_no", "N/A"), "bi-calendar3", "#54a8ff"),
+            make_card("Receipt global no.", details.get("receipt_global_no", "N/A"), "bi-123", "#40e0a0"),
+        ], className="mb-2"),
+
+        section_heading("License", "Manage your fiscalisation license"),
+        dbc.Row([
+            dbc.Col(dbc.Card([
+                dbc.CardBody([
+                    html.Div([
+                        html.Div(
+                            html.I(className="bi bi-shield-check", style={"fontSize": "17px", "color": license_status_color}),
+                            style={
+                                "width": "36px", "height": "36px", "display": "flex",
+                                "alignItems": "center", "justifyContent": "center",
+                                "borderRadius": "11px", "backgroundColor": f"{license_status_color}20",
+                                "flexShrink": 0,
+                            },
+                        ),
+                        html.Div([
+                            html.H6("License status", style={
+                                "fontSize": "9px", "fontWeight": "700", "letterSpacing": ".08em",
+                                "textTransform": "uppercase", "color": "#8993a5", "marginBottom": "3px",
+                            }),
+                            html.Div(license_data.get("status", "UNKNOWN"), style={
+                                "fontSize": "14px", "fontWeight": "700", "color": license_status_color,
+                            }),
+                            html.Small(license_data.get("message", ""), style={"color": "#929bad", "display": "block", "fontSize": "10px"}),
+                            html.Small(days_text, style={
+                                "color": days_color, "fontWeight": "700", "fontSize": "10px",
+                                "display": "block", "marginTop": "2px",
+                            }),
+                        ], style={"minWidth": 0}),
+                    ], style={"display": "flex", "alignItems": "center", "gap": "11px"})
+                ])
+            ], className="dashboard-card h-100", style={"borderRadius": "13px"}), md=6, xl=4, className="mb-2"),
+
+            dbc.Col(dbc.Card([
+                dbc.CardBody([
+                    html.H6("Activate license", style={
+                        "fontSize": "13px", "fontWeight": "700", "color": "#edf2f7", "marginBottom": "7px",
+                    }),
+                    dbc.InputGroup([
+                        dbc.Input(id="input-license-key", placeholder="Paste license key here...", type="text", className="fiscal-input"),
+                        dbc.Button("Activate", id="btn-activate-license", className="btn-fiscal")
+                    ]),
+                    html.Div(id="activation-output", className="mt-1", style={"color": "#cbd5e1"}),
+                ], style={"padding": "12px 14px"})
+            ], className="dashboard-card h-100", style={"borderRadius": "13px"}), md=6, xl=8, className="mb-2")
+        ]),
+
+        section_heading("Quick actions", "Jump straight into the tools you use most"),
+        dbc.Row([
+            dbc.Col(dbc.Card(dbc.CardBody([
+                html.Div(html.I(className="bi bi-file-earmark-plus", style={"fontSize": "17px", "color": "#54a8ff"}), style={
+                    "width": "34px", "height": "34px", "display": "flex", "alignItems": "center",
+                    "justifyContent": "center", "borderRadius": "10px", "backgroundColor": "rgba(84,168,255,.12)",
+                    "marginBottom": "8px",
+                }),
+                html.H5("New invoice", style={"fontSize": "13px", "fontWeight": "700", "color": "#edf2f7", "marginBottom": "3px"}),
+                html.P("Create a new fiscal invoice", style={"fontSize": "11px", "color": "#929bad", "marginBottom": "9px"}),
+                dbc.Button("Go to transactions", href="/transactions", className="btn-fiscal w-100", size="sm"),
+            ], style={"padding": "11px 13px"}), className="dashboard-card h-100", style={"borderRadius": "13px"}), md=4, className="mb-2"),
+            dbc.Col(dbc.Card(dbc.CardBody([
+                html.Div(html.I(className="bi bi-folder2-open", style={"fontSize": "17px", "color": "#40e0a0"}), style={
+                    "width": "34px", "height": "34px", "display": "flex", "alignItems": "center",
+                    "justifyContent": "center", "borderRadius": "10px", "backgroundColor": "rgba(64,224,160,.12)",
+                    "marginBottom": "8px",
+                }),
+                html.H5("Folder scanner", style={"fontSize": "13px", "fontWeight": "700", "color": "#edf2f7", "marginBottom": "3px"}),
+                html.P("Automatically process receipts", style={"fontSize": "11px", "color": "#929bad", "marginBottom": "9px"}),
+                dbc.Button("Open scanner", href="/scanner", className="btn-fiscal w-100", size="sm"),
+            ], style={"padding": "11px 13px"}), className="dashboard-card h-100", style={"borderRadius": "13px"}), md=4, className="mb-2"),
+            dbc.Col(dbc.Card(dbc.CardBody([
+                html.Div(html.I(className="bi bi-graph-up-arrow", style={"fontSize": "17px", "color": "#b38cff"}), style={
+                    "width": "34px", "height": "34px", "display": "flex", "alignItems": "center",
+                    "justifyContent": "center", "borderRadius": "10px", "backgroundColor": "rgba(179,140,255,.12)",
+                    "marginBottom": "8px",
+                }),
+                html.H5("Analytics", style={"fontSize": "13px", "fontWeight": "700", "color": "#edf2f7", "marginBottom": "3px"}),
+                html.P("Explore your fiscal insights", style={"fontSize": "11px", "color": "#929bad", "marginBottom": "9px"}),
+                dbc.Button("Open analytics", href="/analytics", className="btn-fiscal w-100", size="sm"),
+            ], style={"padding": "11px 13px"}), className="dashboard-card h-100", style={"borderRadius": "13px"}), md=4, className="mb-2"),
         ])
-    ])
+    ], style={
+        "backgroundColor": "#0e0e14", "color": "#e2e8f0",
+        "margin": "-20px", "padding": "16px", "minHeight": "calc(100vh - 60px)",
+    })
 
 def get_scanner_page():
-    return html.Div([
-        # (Toasts and Interval were moved to the main layout)
-        
-        html.H2("Folder Scanner", className="mb-4", style={"fontWeight": "600"}),
+    return page_layout("Folder scanner", "Configure receipt processing and review scanner activity.", "bi-folder2-open", [
         dbc.Row([
             dbc.Col([
                 dbc.Card([
-                    dbc.CardHeader(html.H5("Scanner Control & Settings", className="mb-0")),
+                    dbc.CardHeader(html.H5("Scanner control & settings", className="mb-0")),
                     dbc.CardBody([
                         html.Label("Folder Path:", className="fw-bold mb-1"),
                         dbc.Input(id="scanner-folder-path", value=r"C:\Receipt", placeholder="Folder Path", className="mb-3"),
@@ -218,16 +641,17 @@ def get_scanner_page():
                             {"label": "Melivo POS (Default)", "value": "melivo"},
                             {"label": "FEEDMIX POS", "value": "feedmix"},
                             {"label": "QuickBooks POS", "value": "quickbooks"},
-                            {"label": "AIBES (PDF Only)", "value": "aibes"}
-                        ], value="feedmix", className="mb-3"),
+                            {"label": "AIBES EXCL", "value": "aibes"},
+                            {"label": "AIBES INCL", "value": "aibes_incl"}
+                        ], value="aibes_incl", className="mb-3"),
                         html.Label("Default Print Format:", className="fw-bold mb-1"),
                         dbc.Select(id="scanner-print-format", options=[
                             {"label": "A4 Invoice (InvoiceA4)", "value": "InvoiceA4"},
                             {"label": "80mm Thermal Receipt (Receipt48)", "value": "Receipt48"}
-                        ], value="Receipt48", className="mb-3"),
+                        ], value="InvoiceA4", className="mb-3"),
                         
                         dbc.Checklist(
-                            options=[{"label": " Process PDF Files (Extract, Fiscalize & Stamp QR)", "value": "pdfs"}],
+                            options=[{"label": "Process PDF Files (Extract, Fiscalize & Stamp QR)", "value": "pdfs"}],
                             value=[],
                             id="scanner-process-pdfs",
                             switch=True,
@@ -235,32 +659,32 @@ def get_scanner_page():
                         ),
                         
                         dbc.Row([
-                            dbc.Col(dbc.Button("Start Scanning", id="btn-start-scanner", color="success", className="w-100", size="lg"), md=6),
-                            dbc.Col(dbc.Button("Stop Scanning", id="btn-stop-scanner", color="danger", className="w-100", size="lg"), md=6),
+                            dbc.Col(dbc.Button([html.I(className="bi bi-play-fill me-2"), "Start scanning"], id="btn-start-scanner", className="btn-fiscal w-100", size="lg"), md=6),
+                            dbc.Col(dbc.Button([html.I(className="bi bi-stop-fill me-2"), "Stop scanning"], id="btn-stop-scanner", color="danger", className="w-100", size="lg"), md=6),
                         ], className="mb-3"),
                         
                         dbc.Row([
-                            dbc.Col(html.A(dbc.Button([html.I(className="fas fa-print me-2"), "Print Test 80mm Receipt"], color="info", className="w-100"), href="/api/print_test_80mm", target="_blank"), md=12)
+                            dbc.Col(html.A(dbc.Button([html.I(className="bi bi-printer me-2"), "Print test 80mm receipt"], color="info", className="w-100"), href="/api/print_test_80mm", target="_blank"), md=12)
                         ], className="mb-3"),
                         
                         html.A(
-                            dbc.Button([html.I(className="fas fa-external-link-alt me-2"), "Verify Receipt on ZIMRA Portal"], color="secondary", className="w-100 mb-3"),
-                            href="https://fdms.zimra.co.zw/Receipt/Find", target="_blank"
+                            dbc.Button([html.I(className="bi bi-box-arrow-up-right me-2"), "Verify receipt on ZIMRA portal"], color="secondary", className="w-100 mb-3"),
+                            href="https://fdms.zimra.co.zw/Receipt/Find", target="_blank"  
                         ),
                         html.Div(id="scanner-status-display", className="mt-3")
                     ])
-                ], style={"borderRadius": "10px"})
+                ], className="dashboard-card", style={"borderRadius": "16px"})
             ], md=6),
             dbc.Col([
                 dbc.Card([
                     dbc.CardHeader(html.Div([
-                        html.H5("Scanner History Log", className="mb-0 d-inline-block"),
-                        dbc.Button("Clear History", id="btn-clear-history", color="warning", size="sm", className="float-end")
-                    ])),
+                        html.H5("Scanner history log", className="mb-0 d-inline-block"),
+                        dbc.Button([html.I(className="bi bi-trash3 me-1"), "Clear history"], id="btn-clear-history", color="warning", size="sm", className="float-end")
+                    ])), 
                     dbc.CardBody([
-                        html.Div(id="scanner-log-display", style={"maxHeight": "600px", "overflow": "auto", "backgroundColor": "#f8f9fa", "padding": "15px", "borderRadius": "5px", "fontSize": "12px"})
+                        html.Div(id="scanner-log-display", style={"maxHeight": "600px", "overflow": "auto", "backgroundColor": "#10131b", "padding": "15px", "borderRadius": "12px", "fontSize": "12px"})
                     ])
-                ], style={"borderRadius": "10px"})
+                ], className="dashboard-card", style={"borderRadius": "16px"})
             ], md=6),
         ])
     ])
@@ -272,10 +696,9 @@ def load_scanner_settings(pathname):
             res = requests.get(f"{API_BASE}/api/scanner_settings", timeout=2)
             data = res.json()
             pdf_val = ["pdfs"] if data.get("process_pdfs", False) else []
-            # Updated fallbacks to default to Feedmix and Receipt48
-            return data.get("folder_path", r"C:\Receipt"), data.get("template", "feedmix"), data.get("print_format", "Receipt48"), pdf_val
+            return data.get("folder_path", r"C:\Receipt"), data.get("template", "aibes_incl"), data.get("print_format", "InvoiceA4"), pdf_val
         except:
-            return r"C:\Receipt", "feedmix", "Receipt48", []
+            return r"C:\Receipt", "aibes_incl", "InvoiceA4", []
     return dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
 @callback(Output("scanner-status-display", "children"), [Input("btn-start-scanner", "n_clicks"), Input("btn-stop-scanner", "n_clicks")], [State("scanner-folder-path", "value"), State("scanner-template", "value"), State("scanner-print-format", "value"), State("scanner-process-pdfs", "value")], prevent_initial_call=True)
@@ -320,7 +743,6 @@ def control_scanner(start_clicks, stop_clicks, folder_path, template, print_form
     State("last-seen-log-id", "data")
 )
 def update_scanner_notifications(n, last_id):
-    """Polls the backend for new logs and triggers toast popups."""
     try:
         res = requests.get(f"{API_BASE}/api/scanner_history", params={"limit": 1}, timeout=2)
         logs = res.json()
@@ -330,17 +752,16 @@ def update_scanner_notifications(n, last_id):
             
             if current_id > last_id:
                 status = latest.get('status', 'INFO')
-                msg = latest.get('message', '')
-                short_msg = msg.split('\n')[0] if '\n' in msg else (msg[:120] + "..." if len(msg) > 120 else msg)
+                msg = str(latest.get('message') or '')
                 
                 if status == 'SUCCESS':
-                    return True, f"✅ Successfully Processed: {latest.get('timestamp', '')}", short_msg, False, "", "", False, "", "", current_id
+                    return True, f"✅ Successfully Processed: {latest.get('timestamp', '')}", msg, False, "", "", False, "", "", current_id
                 elif status in ['FAILED', 'ERROR'] or 'VALIDATION FAILED' in msg or 'ZIMRA ERROR' in msg:
-                    header = "⚠️ Processing Failed" if status == 'FAILED' else "❌ System Error"
-                    return False, "", "", True, header, short_msg, False, "", "", current_id
+                    header = "⚠️ Processing Failed" if status == 'FAILED' else " System Error"
+                    return False, "", "", True, header, msg, False, "", "", current_id
                 else:
                     return False, "", "", False, "", "", False, "", "", current_id
-                    
+                     
         return False, "", "", False, "", "", False, "", "", last_id
     except Exception:
         return False, "", "", False, "", "", False, "", "", last_id
@@ -392,16 +813,16 @@ def update_scanner_log(n, clear_clicks):
                     text_part = parts[0]
                     url_part = parts[1].split(" | ")[0].strip()
                     
-                    log_content.append(html.Span(text_part, style={"color": "#333", "whiteSpace": "pre-wrap", "fontFamily": "monospace"}))
+                    log_content.append(html.Span(text_part, style={"color": "#dce3ed", "whiteSpace": "pre-wrap", "fontFamily": "monospace"}))
                     verify_btn = html.A(
-                        dbc.Button([html.I(className="fas fa-shield-alt me-1"), "Verify on ZIMRA"], color="primary", size="sm", className="ms-2"),
+                        dbc.Button([html.I(className="bi bi-shield-check me-1"), "Verify on ZIMRA"], color="primary", size="sm", className="ms-2"),
                         href=url_part, target="_blank", style={"textDecoration": "none"}
                     )
                 else:
-                    log_content.append(html.Span(msg, style={"color": "#333", "whiteSpace": "pre-wrap", "fontFamily": "monospace"}))
+                    log_content.append(html.Span(msg, style={"color": "#dce3ed", "whiteSpace": "pre-wrap", "fontFamily": "monospace"}))
 
                 row_content = [
-                    html.Span(f"[{time_str}] ", style={"color": "#888", "marginRight": "8px", "fontFamily": "monospace"}),
+                    html.Span(f"[{time_str}] ", style={"color": "#929bad", "marginRight": "8px", "fontFamily": "monospace"}),
                     *log_content
                 ]
                 if verify_btn:
@@ -409,7 +830,7 @@ def update_scanner_log(n, clear_clicks):
 
                 formatted_logs.append(html.Div(
                     row_content,
-                    style={"marginBottom": "8px", "padding": "10px", "backgroundColor": "#fff", "borderRadius": "4px", "fontSize": "13px", "borderLeft": f"4px solid {border_color}", "boxShadow": "0 1px 2px rgba(0,0,0,0.05)", "display": "flex", "alignItems": "center", "flexWrap": "wrap"}
+                    style={"marginBottom": "8px", "padding": "12px", "backgroundColor": "#151821", "border": "1px solid rgba(255,255,255,.06)", "borderRadius": "10px", "fontSize": "13px", "borderLeft": f"3px solid {border_color}", "display": "flex", "alignItems": "center", "flexWrap": "wrap"}
                 ))
         
         return html.Div(formatted_logs)
@@ -417,8 +838,7 @@ def update_scanner_log(n, clear_clicks):
         return f"Unable to connect to scanner: {str(e)}"
 
 def get_analytics_page():
-    return html.Div([
-        html.H2("Sales Analytics", className="mb-4", style={"fontWeight": "600"}),
+    return page_layout("Sales analytics", "Track sales, tax, product performance, and peak business hours.", "bi-graph-up-arrow", [
         
         dbc.Card([
             dbc.CardBody([
@@ -464,14 +884,14 @@ def get_analytics_page():
                     ], md=2)
                 ])
             ])
-        ], className="mb-4", style={"borderRadius": "10px"}),
+        ], className="mb-4 dashboard-card", style={"borderRadius": "16px"}),
         
         dbc.Card([
             dbc.CardHeader(html.H5("USD vs ZWG Performance", className="mb-0")),
             dbc.CardBody([
                 dcc.Graph(id="analytics-main-chart", style={"height": "400px"})
             ])
-        ], className="mb-4", style={"borderRadius": "10px"}),
+        ], className="mb-4 dashboard-card", style={"borderRadius": "16px"}),
         
         dbc.Card([
             dbc.CardHeader(html.H5("Top 10 Products by Currency", className="mb-0")),
@@ -513,14 +933,14 @@ def get_analytics_page():
                     ),
                 ], id="analytics-currency-tabs", active_tab="tab-usd")
             ])
-        ], className="mb-4", style={"borderRadius": "10px"}),
+        ], className="mb-4 dashboard-card", style={"borderRadius": "16px"}),
         
         dbc.Card([
             dbc.CardHeader(html.H5("Peak Business Hours (24h)", className="mb-0")),
             dbc.CardBody([
                 dcc.Graph(id="busy-hours-chart", style={"height": "300px"})
             ])
-        ], style={"borderRadius": "10px"}),
+        ], className="dashboard-card", style={"borderRadius": "16px"}),
         
         dcc.Interval(id="analytics-refresh", interval=10000, n_intervals=0)
     ])
@@ -581,7 +1001,12 @@ def update_analytics(range_type, chart_type, metric, apply_clicks, n, start_date
             xaxis_title="Period",
             yaxis_title=y_title,
             barmode='group' if chart_type == 'bar' else None,
-            template='plotly_white',
+            template='plotly_dark',
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#dce3ed"),
+            xaxis=dict(gridcolor="rgba(255,255,255,.08)"),
+            yaxis=dict(gridcolor="rgba(255,255,255,.08)"),
             height=400,
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
@@ -637,7 +1062,12 @@ def update_analytics(range_type, chart_type, metric, apply_clicks, n, start_date
             title="Transaction Volume by Hour of Day",
             xaxis_title="Hour",
             yaxis_title="Number of Transactions",
-            template='plotly_white',
+            template='plotly_dark',
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#dce3ed"),
+            xaxis=dict(gridcolor="rgba(255,255,255,.08)"),
+            yaxis=dict(gridcolor="rgba(255,255,255,.08)"),
             height=300
         )
         
@@ -648,11 +1078,10 @@ def update_analytics(range_type, chart_type, metric, apply_clicks, n, start_date
         return empty_fig, error_msg, error_msg, error_msg, error_msg, empty_fig
 
 def get_fiscal_day_page():
-    return html.Div([
-        html.H2("Fiscal Day Management", className="mb-4", style={"fontWeight": "600"}),
+    return page_layout("Fiscal day management", "Open and close fiscal days and generate the daily Z-Report.", "bi-calendar3", [
         dbc.Row([
-            dbc.Col(dbc.Card([dbc.CardHeader(html.H5("Open New Fiscal Day", className="mb-0")), dbc.CardBody([html.P("Start a new fiscal day to begin issuing receipts.", className="text-muted"), dbc.Input(id="open-day-no", type="number", placeholder="Fiscal Day No (Optional)", className="mb-3"), dbc.Button("Open Fiscal Day", id="btn-open-day", color="success", className="w-100", size="lg"), html.Div(id="open-day-output", className="mt-3")])], style={"borderRadius": "10px"}), md=6),
-            dbc.Col(dbc.Card([dbc.CardHeader(html.H5("Close Current Fiscal Day", className="mb-0")), dbc.CardBody([html.P("Close the current fiscal day automatically and generate Z-Report.", className="text-muted"), dbc.Button("Close Fiscal Day (Auto)", id="btn-close-day", color="danger", className="w-100", size="lg"), html.Div(id="close-day-output", className="mt-3")])], style={"borderRadius": "10px"}), md=6),
+            dbc.Col(dbc.Card([dbc.CardHeader(html.H5([html.I(className="bi bi-unlock me-2"), "Open new fiscal day"], className="mb-0")), dbc.CardBody([html.P("Start a new fiscal day to begin issuing receipts.", className="text-muted"), dbc.Input(id="open-day-no", type="number", placeholder="Fiscal day no. (optional)", className="mb-3"), dbc.Button([html.I(className="bi bi-play-fill me-2"), "Open fiscal day"], id="btn-open-day", className="btn-fiscal w-100", size="lg"), html.Div(id="open-day-output", className="mt-3")])], className="dashboard-card h-100", style={"borderRadius": "16px"}), md=6, className="mb-3"),
+            dbc.Col(dbc.Card([dbc.CardHeader(html.H5([html.I(className="bi bi-lock me-2"), "Close current fiscal day"], className="mb-0")), dbc.CardBody([html.P("Close the current fiscal day automatically and generate a Z-Report.", className="text-muted"), dbc.Button([html.I(className="bi bi-check2-circle me-2"), "Close fiscal day"], id="btn-close-day", color="danger", className="w-100", size="lg"), html.Div(id="close-day-output", className="mt-3")])], className="dashboard-card h-100", style={"borderRadius": "16px"}), md=6, className="mb-3"),
         ])
     ])
 
@@ -686,9 +1115,8 @@ def close_fiscal_day(n):
     except Exception as e: return dbc.Alert(str(e), color="danger")
 
 def get_transactions_page():
-    return html.Div([
-        html.H2("Test Transactions", className="mb-4", style={"fontWeight": "600"}),
-        dbc.Tabs([dbc.Tab(label="Submit Invoice", tab_id="tab-invoice", labelClassName="text-primary fw-bold"), dbc.Tab(label="Credit Note", tab_id="tab-credit", labelClassName="text-warning fw-bold")], id="trans-tabs", active_tab="tab-invoice", className="mb-3"),
+    return page_layout("Transactions", "Submit fiscal invoices and credit notes to the fiscal device.", "bi-receipt", [
+        dbc.Tabs([dbc.Tab(label="Submit invoice", tab_id="tab-invoice", labelClassName="fw-bold"), dbc.Tab(label="Credit note", tab_id="tab-credit", labelClassName="fw-bold")], id="trans-tabs", active_tab="tab-invoice", className="mb-3"),
         html.Div(id="trans-tab-content")
     ])
 
@@ -696,19 +1124,19 @@ def get_transactions_page():
 def render_trans_tab(tab):
     print_options = [{"label": "A4 Invoice", "value": "InvoiceA4"}, {"label": "Receipt 48mm", "value": "Receipt48"}]
     if tab == "tab-credit":
-        return dbc.Card([dbc.CardHeader(html.H5("Credit Note", className="mb-0")), dbc.CardBody([
+        return dbc.Card([dbc.CardHeader(html.H5([html.I(className="bi bi-arrow-counterclockwise me-2"), "Credit note"], className="mb-0")), dbc.CardBody([
             dbc.Row([dbc.Col(dbc.Input(id="cn-no", placeholder="CN No", value="CN-001"), md=4), dbc.Col(dbc.Input(id="cn-orig", placeholder="Original Inv No", value="INV-001"), md=4), dbc.Col(dbc.Input(id="cn-total", type="number", value=115.50, placeholder="Total"), md=4)], className="mb-3"),
             dbc.Row([dbc.Col(dbc.Input(id="cn-qty", type="number", value=2, placeholder="Quantity"), md=4), dbc.Col(dbc.Select(id="cn-print-format", options=print_options, value="InvoiceA4"), md=4)], className="mb-3"),
-            dbc.Button("Submit Credit Note", id="btn-cn", color="warning", className="w-100", size="lg"),
+            dbc.Button([html.I(className="bi bi-send me-2"), "Submit credit note"], id="btn-cn", color="warning", className="w-100", size="lg"),
             html.Div(id="cn-out", className="mt-3")
-        ])], style={"borderRadius": "10px"})
+        ])], className="dashboard-card", style={"borderRadius": "16px"})
     else:
-        return dbc.Card([dbc.CardHeader(html.H5("Fiscal Invoice", className="mb-0")), dbc.CardBody([
+        return dbc.Card([dbc.CardHeader(html.H5([html.I(className="bi bi-receipt me-2"), "Fiscal invoice"], className="mb-0")), dbc.CardBody([
             dbc.Row([dbc.Col(dbc.Input(id="inv-no", placeholder="Invoice No", value="INV-001"), md=4), dbc.Col(dbc.Select(id="inv-curr", options=[{"label": "USD", "value": "USD"}, {"label": "ZWG", "value": "ZWG"}], value="USD"), md=4), dbc.Col(dbc.Input(id="inv-total", type="number", value=115.50, placeholder="Total"), md=4)], className="mb-3"),
             dbc.Row([dbc.Col(dbc.Input(id="inv-qty", type="number", value=2, placeholder="Quantity"), md=4), dbc.Col(dbc.Select(id="inv-print-format", options=print_options, value="InvoiceA4"), md=4)], className="mb-3"),
-            dbc.Button("Submit Invoice", id="btn-inv", color="primary", className="w-100", size="lg"),
+            dbc.Button([html.I(className="bi bi-send me-2"), "Submit invoice"], id="btn-inv", className="btn-fiscal w-100", size="lg"),
             html.Div(id="inv-out", className="mt-3")
-        ])], style={"borderRadius": "10px"})
+        ])], className="dashboard-card", style={"borderRadius": "16px"})
 
 @callback([Output("inv-out", "children"), Output("pdf-payload-store-inv", "data"), Output("download-trigger-inv", "data"), Output("print-command-store", "data", allow_duplicate=True)], 
           Input("btn-inv", "n_clicks"), 
@@ -725,10 +1153,10 @@ def submit_inv(n, no, curr, total, qty, print_format):
             qr_url = data.get('QRcode', 'https://fdms.zimra.co.zw/Receipt/Find')
             pdf_store_data = {"receipt_data": data.get("Data"), "verification_code": data.get("VerificationCode"), "qr_code": qr_url, "print_format": print_format}
             success_ui = html.Div([
-                dbc.Alert([html.I(className="fas fa-check-circle me-2"), f"Success! Verification Code: {data.get('VerificationCode')}"], color="success"),
-                dbc.Row([dbc.Col(html.A(dbc.Button([html.I(className="fas fa-external-link-alt me-2"), "Verify on ZIMRA"], color="success", className="w-100"), href=qr_url, target="_blank"), width=4), 
-                         dbc.Col(dbc.Button([html.I(className="fas fa-file-pdf me-2"), "Download PDF"], id="btn-trigger-download-inv", color="primary", className="w-100", n_clicks=0), width=4),
-                         dbc.Col(dbc.Button([html.I(className="fas fa-print me-2"), "Print Receipt"], id="btn-print-inv-ui", color="info", className="w-100"), width=4)], className="mt-3")
+                dbc.Alert([html.I(className="bi bi-check-circle me-2"), f"Success! Verification Code: {data.get('VerificationCode')}"], color="success"),
+                dbc.Row([dbc.Col(html.A(dbc.Button([html.I(className="bi bi-box-arrow-up-right me-2"), "Verify on ZIMRA"], color="success", className="w-100"), href=qr_url, target="_blank"), width=4),
+                         dbc.Col(dbc.Button([html.I(className="bi bi-file-earmark-pdf me-2"), "Download PDF"], id="btn-trigger-download-inv", color="primary", className="w-100", n_clicks=0), width=4),
+                         dbc.Col(dbc.Button([html.I(className="bi bi-printer me-2"), "Print receipt"], id="btn-print-inv-ui", color="info", className="w-100"), width=4)], className="mt-3")
             ])
             return success_ui, pdf_store_data, pdf_store_data, {"type": "invoice"}
         return dbc.Alert(f"Error: {data.get('Message')}", color="danger"), dash.no_update, dash.no_update, dash.no_update
@@ -749,10 +1177,10 @@ def submit_cn(n, no, orig, total, qty, print_format):
             qr_url = data.get('QRcode', 'https://fdms.zimra.co.zw/Receipt/Find')
             pdf_store_data = {"receipt_data": data.get("Data"), "verification_code": data.get("VerificationCode"), "qr_code": qr_url, "print_format": print_format}
             success_ui = html.Div([
-                dbc.Alert([html.I(className="fas fa-check-circle me-2"), f"Success! Verification Code: {data.get('VerificationCode')}"], color="success"),
-                dbc.Row([dbc.Col(html.A(dbc.Button([html.I(className="fas fa-external-link-alt me-2"), "Verify on ZIMRA"], color="success", className="w-100"), href=qr_url, target="_blank"), width=4), 
-                         dbc.Col(dbc.Button([html.I(className="fas fa-file-pdf me-2"), "Download PDF"], id="btn-trigger-download-cn", color="primary", className="w-100", n_clicks=0), width=4),
-                         dbc.Col(dbc.Button([html.I(className="fas fa-print me-2"), "Print Receipt"], id="btn-print-cn-ui", color="info", className="w-100"), width=4)], className="mt-3")
+                dbc.Alert([html.I(className="bi bi-check-circle me-2"), f"Success! Verification Code: {data.get('VerificationCode')}"], color="success"),
+                dbc.Row([dbc.Col(html.A(dbc.Button([html.I(className="bi bi-box-arrow-up-right me-2"), "Verify on ZIMRA"], color="success", className="w-100"), href=qr_url, target="_blank"), width=4),
+                         dbc.Col(dbc.Button([html.I(className="bi bi-file-earmark-pdf me-2"), "Download PDF"], id="btn-trigger-download-cn", color="primary", className="w-100", n_clicks=0), width=4),
+                         dbc.Col(dbc.Button([html.I(className="bi bi-printer me-2"), "Print receipt"], id="btn-print-cn-ui", color="info", className="w-100"), width=4)], className="mt-3")
             ])
             return success_ui, pdf_store_data, pdf_store_data, {"type": "creditnote"}
         return dbc.Alert(f"Error: {data.get('Message')}", color="danger"), dash.no_update, dash.no_update, dash.no_update
@@ -763,7 +1191,7 @@ def download_pdf(inv_data, cn_data):
     triggered = ctx.triggered_id
     payload = inv_data if triggered == "download-trigger-inv" else cn_data
     if payload:
-        try:
+        try: 
             res = requests.post(f"{API_BASE}/api/print_pdf", json=payload)
             if res.status_code == 200:
                 inv_no = payload.get('receipt_data', {}).get('receipt', {}).get('invoiceNo', 'Receipt')
@@ -775,23 +1203,97 @@ def download_pdf(inv_data, cn_data):
 @callback(Output("dummy-print", "children"), Input("print-command-store", "data"), prevent_initial_call=True)
 def execute_print(data):
     if data:
-        return dcc.Markdown("<script>window.print();</script>", dangerously_allow_html=True)
+        return dcc.Markdown(" ", dangerously_allow_html=True)
     return ""
 
-def get_audit_page():
-    try:
-        res_stats = requests.get(f"{API_BASE}/api/receipt_stats", timeout=5)
-        stats = res_stats.json()
-        res_reports = requests.get(f"{API_BASE}/api/z_reports", timeout=5)
-        z_reports = res_reports.json()
-    except: 
-        stats = {"total_success": 0, "total_failed": 0, "recent_success": [], "recent_failed": []}
-        z_reports = []
+def build_zimra_receipt_table(receipts):
+    rows = []
+    totals_by_currency = {}
+    for receipt in receipts:
+        status = receipt.get("zimra_status", "Unverified")
+        badge_color = "success" if status == "Valid" else "danger" if status == "Invalid" else "warning"
+        currency = receipt.get("receipt_currency") or "USD"
+        try:
+            amount = float(receipt.get("total_amount") or 0)
+        except (TypeError, ValueError):
+            amount = 0.0
+        totals_by_currency[currency] = totals_by_currency.get(currency, 0.0) + amount
+        amount_text = f"{currency} {amount:,.2f}"
+        qr_url = receipt.get("qr_code")
+        rows.append(html.Tr([
+            html.Td(receipt.get("fiscal_day_no") or "N/A"),
+            html.Td(receipt.get("invoice_no") or "N/A"),
+            html.Td(receipt.get("customer_name") or "N/A"),
+            html.Td(receipt.get("customer_vat") or "N/A"),
+            html.Td(receipt.get("customer_tin") or "N/A"),
+            html.Td(amount_text),
+            html.Td(receipt.get("created_at") or "N/A"),
+            html.Td(receipt.get("verification_code") or "N/A"),
+            html.Td(dbc.Badge(status, color=badge_color, className="px-2 py-1")),
+            html.Td(html.Small(receipt.get("zimra_detail") or "", className="text-muted")),
+            html.Td(html.A(
+                [html.I(className="bi bi-box-arrow-up-right me-1"), "Open QR"],
+                href=qr_url, target="_blank", rel="noopener noreferrer",
+            ) if qr_url else "N/A"),
+        ]))
 
-    def build_table(data):
-        if not data: return html.P("No records found.", className="text-muted text-center p-3")
-        rows = [html.Tr([html.Td(r.get('invoice_no', 'N/A')), html.Td(f"${r.get('total_amount', 0):.2f}"), html.Td(r.get('verification_code', 'N/A') or 'N/A'), html.Td(r.get('created_at', 'N/A')), html.Td(html.Small(r.get('zimra_response', ''), className="text-muted"))]) for r in data]
-        return dbc.Table([html.Thead(html.Tr([html.Th("Invoice No"), html.Th("Amount"), html.Th("Verification Code"), html.Th("Date"), html.Th("ZIMRA Response")])), html.Tbody(rows)], bordered=True, hover=True, responsive=True, size="sm")
+    if not rows:
+        rows.append(html.Tr([
+            html.Td("No receipts match the selected filters.", colSpan=11,
+                    className="text-muted text-center py-4"),
+        ]))
+
+    total_text = " | ".join(
+        f"{currency} {amount:,.2f}"
+        for currency, amount in sorted(totals_by_currency.items())
+    ) or "—"
+    return dbc.Table([
+        html.Thead(html.Tr([
+            html.Th("Fiscal day"), html.Th("Invoice no."), html.Th("Customer name"),
+            html.Th("Customer VAT"), html.Th("Customer TIN"), html.Th("Amount"),
+            html.Th("Submitted"), html.Th("Verification code"), html.Th("ZIMRA status"),
+            html.Th("ZIMRA response"), html.Th("QR link"),
+        ])),
+        html.Tbody(rows),
+        html.Tfoot(html.Tr([
+            html.Th(f"TOTAL · {len(receipts)} receipt(s)", colSpan=5),
+            html.Th(total_text),
+            html.Th(colSpan=5),
+        ], style={"borderTop": "2px solid rgba(64,224,208,.35)", "fontWeight": "700"})),
+    ], bordered=True, hover=True, responsive=True, size="sm", className="mb-0")
+
+def filter_zimra_receipts(receipts, fiscal_day, customer_name, invoice_no, start_date, end_date):
+    filtered = []
+    fiscal_day_filter = str(fiscal_day or "").strip().casefold()
+    customer_filter = str(customer_name or "").strip().casefold()
+    invoice_filter = str(invoice_no or "").strip().casefold()
+
+    for receipt in receipts:
+        submitted_date = str(receipt.get("created_at") or "")[:10]
+        if fiscal_day_filter and fiscal_day_filter not in str(receipt.get("fiscal_day_no") or "").casefold():
+            continue
+        if customer_filter and customer_filter not in str(receipt.get("customer_name") or "").casefold():
+            continue
+        if invoice_filter and invoice_filter not in str(receipt.get("invoice_no") or "").casefold():
+            continue
+        if start_date and (not submitted_date or submitted_date < start_date[:10]):
+            continue
+        if end_date and (not submitted_date or submitted_date > end_date[:10]):
+            continue
+        filtered.append(receipt)
+    return filtered
+
+def get_audit_page():
+    z_report_error = None
+    try:
+        res_reports = requests.get(f"{API_BASE}/api/z_reports", timeout=5)
+        res_reports.raise_for_status()
+        z_reports = res_reports.json()
+        if not isinstance(z_reports, list):
+            raise ValueError("The Z-Reports endpoint returned an invalid response.")
+    except (requests.RequestException, ValueError) as error:
+        z_report_error = str(error)
+        z_reports = []
 
     def build_z_report_table(reports):
         if not reports: return html.P("No Z-Reports generated yet.", className="text-muted text-center p-3")
@@ -811,23 +1313,140 @@ def get_audit_page():
                     dbc.Button("PDF", color="primary", size="sm", id={'type': 'btn-dl-zreport-pdf', 'index': r['id']})
                 ]))
             ]))
-        return dbc.Table([html.Thead(html.Tr([html.Th("Fiscal Day"), html.Th("Closed Date"), html.Th("USD (Sales/VAT)"), html.Th("ZWG (Sales/VAT)"), html.Th("Receipts"), html.Th("Download")])), html.Tbody(rows)], bordered=True, hover=True, responsive=True, size="sm")
+        return dbc.Table([html.Thead(html.Tr([html.Th("Fiscal Day"), html.Th("Closed Date"), html.Th("USD (Sales/VAT)"), html.Th("ZWG (Sales/VAT)"), html.Th("Receipts"), html.Th("Download")])), html.Tbody(rows)], bordered=True, hover=True, responsive=True, size="sm", className="mb-0")
 
-    return html.Div([
-        html.H2("Audit Log & Z-Reports", className="mb-4", style={"fontWeight": "600"}),
-        html.H4("Z-Report History", className="mb-3"),
-        dbc.Card([dbc.CardBody(build_z_report_table(z_reports))], className="mb-4", style={"borderRadius": "10px"}),
-        dbc.Row([dbc.Col(dbc.Card([dbc.CardBody([html.Div([html.I(className="fas fa-check-circle", style={"fontSize": "32px", "color": COLORS["success"], "marginRight": "15px"}), html.Div([html.H6("Total Successful", className="text-muted mb-1"), html.H3(str(stats.get('total_success', 0)), className="mb-0 text-success")])], style={"display": "flex", "alignItems": "center"})])], style={"borderRadius": "10px"}), md=6), dbc.Col(dbc.Card([dbc.CardBody([html.Div([html.I(className="fas fa-times-circle", style={"fontSize": "32px", "color": COLORS["danger"], "marginRight": "15px"}), html.Div([html.H6("Total Failed", className="text-muted mb-1"), html.H3(str(stats.get('total_failed', 0)), className="mb-0 text-danger")])], style={"display": "flex", "alignItems": "center"})])], style={"borderRadius": "10px"}), md=6)], className="mb-4"),
-        
-        # NEW: Download CSV Button for Successful Receipts
+    return page_layout("Audit log & Z-Reports", "Review receipt outcomes verified directly against ZIMRA, plus fiscal-day summaries.", "bi-clipboard-data", [
         html.Div([
-            html.H4("Recent Successful Receipts", className="mb-3 d-inline-block"),
-            dbc.Button([html.I(className="fas fa-file-csv me-2"), "Download CSV"], id="btn-download-success", color="success", size="sm", className="ms-3")
-        ], className="d-flex align-items-center mb-3"), 
-        dbc.Card([dbc.CardBody(build_table(stats.get('recent_success', [])))], className="mb-4", style={"borderRadius": "10px"}),
-        
-        html.H4("Recent Failed Receipts", className="mb-3"), dbc.Card([dbc.CardBody(build_table(stats.get('recent_failed', [])))], className="mb-4", style={"borderRadius": "10px"}),
+            html.Div([
+                html.H4("Receipt verification", className="mb-1"),
+                html.P("Verify recent QR links with ZIMRA, then filter receipt records.", className="text-muted mb-0"),
+            ]),
+            dbc.Button(
+                [html.I(className="bi bi-arrow-clockwise me-2"), "Verify recent receipts"],
+                id="btn-refresh-zimra-audit", n_clicks=0, className="btn-fiscal",
+            ),
+        ], className="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-3"),
+        dcc.Store(id="zimra-audit-store", storage_type="memory"),
+        dbc.Card([
+            dbc.CardBody([
+                dbc.Row([
+                    dbc.Col(dbc.Input(
+                        id="audit-filter-fiscal-day", placeholder="Filter fiscal day",
+                        type="text", className="fiscal-input",
+                    ), md=2, className="mb-2"),
+                    dbc.Col(dbc.Input(
+                        id="audit-filter-customer", placeholder="Filter customer name",
+                        type="text", className="fiscal-input",
+                    ), md=3, className="mb-2"),
+                    dbc.Col(dbc.Input(
+                        id="audit-filter-invoice", placeholder="Filter invoice number",
+                        type="text", className="fiscal-input",
+                    ), md=3, className="mb-2"),
+                    dbc.Col(dcc.DatePickerRange(
+                        id="audit-filter-submitted-date",
+                        start_date_placeholder_text="Submitted from",
+                        end_date_placeholder_text="Submitted to",
+                        display_format="YYYY-MM-DD",
+                        minimum_nights=0,
+                        className="mb-2",
+                    ), md=4, className="mb-2"),
+                ]),
+                dbc.Button(
+                    [html.I(className="bi bi-x-circle me-2"), "Clear filters"],
+                    id="btn-clear-audit-filters", color="secondary", size="sm",
+                ),
+            ]),
+        ], className="dashboard-card mb-3", style={"borderRadius": "16px"}),
+        dbc.Tabs([
+            dbc.Tab(label="Successful", tab_id="success"),
+            dbc.Tab(label="Failed", tab_id="failed"),
+            dbc.Tab(label="Receipts not verified", tab_id="unverified"),
+        ], id="audit-receipt-tabs", active_tab="success", className="mb-3"),
+        dcc.Loading(
+            html.Div("Select Verify recent receipts to check ZIMRA.", id="zimra-audit-results"),
+            type="circle",
+            color="#40E0D0",
+        ),
+        html.Div(id="zimra-audit-refresh-status", className="mb-3"),
+        html.H4("Z-Report history", className="mb-3 mt-4"),
+        dbc.Alert(
+            f"Unable to load Z-Reports: {z_report_error}", color="danger",
+        ) if z_report_error else None,
+        dbc.Card([dbc.CardBody(build_z_report_table(z_reports))], className="mb-4 dashboard-card", style={"borderRadius": "16px"}),
+        html.Div([
+            html.H5("Local audit export", className="mb-0"),
+            dbc.Button(
+                [html.I(className="bi bi-filetype-csv me-2"), "Export locally accepted receipts"],
+                id="btn-download-success", color="secondary", size="sm",
+            ),
+        ], className="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-3"),
     ])
+
+@callback(
+    [Output("zimra-audit-store", "data"), Output("zimra-audit-refresh-status", "children")],
+    [Input("url", "pathname"), Input("btn-refresh-zimra-audit", "n_clicks")],
+)
+def refresh_zimra_audit(pathname, n_clicks):
+    if pathname != "/audit":
+        return dash.no_update, dash.no_update
+    try:
+        response = requests.get(f"{API_BASE}/api/receipt_verification", timeout=45)
+        response.raise_for_status()
+        data = response.json()
+        if "error" in data:
+            raise ValueError(data["error"])
+        return data, ""
+    except (requests.RequestException, ValueError) as error:
+        return None, dbc.Alert(f"Unable to verify receipts with ZIMRA: {error}", color="danger")
+
+@callback(
+    Output("zimra-audit-results", "children"),
+    [
+        Input("zimra-audit-store", "data"),
+        Input("audit-receipt-tabs", "active_tab"),
+        Input("audit-filter-fiscal-day", "value"),
+        Input("audit-filter-customer", "value"),
+        Input("audit-filter-invoice", "value"),
+        Input("audit-filter-submitted-date", "start_date"),
+        Input("audit-filter-submitted-date", "end_date"),
+    ],
+)
+def render_zimra_receipt_tab(data, active_tab, fiscal_day, customer_name, invoice_no, start_date, end_date):
+    if not data:
+        return html.P("Select Verify recent receipts to check ZIMRA.", className="text-muted text-center p-3")
+
+    status_data = {
+        "success": data.get("recent_success", []),
+        "failed": data.get("recent_failed", []),
+        "unverified": data.get("recent_unverified", []),
+    }
+    receipts = filter_zimra_receipts(
+        status_data.get(active_tab, []),
+        fiscal_day,
+        customer_name,
+        invoice_no,
+        start_date,
+        end_date,
+    )
+    return dbc.Card(
+        dbc.CardBody(build_zimra_receipt_table(receipts)),
+        className="dashboard-card mb-4",
+        style={"borderRadius": "16px"},
+    )
+
+@callback(
+    [
+        Output("audit-filter-fiscal-day", "value"),
+        Output("audit-filter-customer", "value"),
+        Output("audit-filter-invoice", "value"),
+        Output("audit-filter-submitted-date", "start_date"),
+        Output("audit-filter-submitted-date", "end_date"),
+    ],
+    Input("btn-clear-audit-filters", "n_clicks"),
+    prevent_initial_call=True,
+)
+def clear_audit_filters(n_clicks):
+    return "", "", "", None, None
 
 @callback(Output("download-success-csv", "data"), Input("btn-download-success", "n_clicks"), prevent_initial_call=True)
 def download_success_csv(n):
@@ -841,7 +1460,9 @@ def download_success_csv(n):
     return dash.no_update
 
 def get_pos_page():
-    return html.Div([html.H2("Point of Sale", className="mb-4", style={"fontWeight": "600"}), dbc.Card([dbc.CardBody([html.Div([html.I(className="fas fa-cash-register", style={"fontSize": "64px", "color": COLORS["text_muted"], "marginBottom": "20px"}), html.H4("POS Module Coming Soon", className="text-center text-muted"), html.P("This module will integrate directly with your barcode scanner and cart system.", className="text-center")], style={"textAlign": "center", "padding": "40px"})])], style={"borderRadius": "10px"})])
+    return page_layout("Point of sale", "A streamlined checkout experience for your fiscal device.", "bi-shop", [
+        dbc.Card([dbc.CardBody([html.Div([html.I(className="bi bi-basket2", style={"fontSize": "48px", "color": "#40e0a0", "marginBottom": "18px"}), html.H4("POS module coming soon", className="text-center", style={"color": "#edf2f7"}), html.P("This module will integrate directly with your barcode scanner and cart system.", className="text-center text-muted", style={"maxWidth": "480px", "margin": "0 auto"})], style={"textAlign": "center", "padding": "48px 24px"})])], className="dashboard-card", style={"borderRadius": "16px"})
+    ])
 
 @callback(Output("download-zreport", "data"), Input({'type': 'btn-dl-zreport', 'index': dash.ALL}, "n_clicks"), prevent_initial_call=True)
 def download_z_report(n_clicks_list):
@@ -870,6 +1491,24 @@ def download_z_report_pdf(n_clicks_list):
         except Exception as e:
             print(f"Error downloading Z-Report PDF: {e}")
     return dash.no_update
+
+@callback(
+    Output("activation-output", "children"),
+    Input("btn-activate-license", "n_clicks"),
+    State("input-license-key", "value"),
+    prevent_initial_call=True
+)
+def activate_license(n, key):
+    if not n:
+        return ""
+    try:
+        res = requests.post(f"{API_BASE}/api/activate_license", json={"license_key": key})
+        data = res.json()
+        if data.get("status") == "success":
+            return dbc.Alert(f"✅ {data.get('message')} (Expires: {data.get('expiry')})", color="success")
+        return dbc.Alert(f"❌ {data.get('message')}", color="danger")
+    except Exception as e:
+        return dbc.Alert(f"Error: {str(e)}", color="danger")
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=8050, debug=False)

@@ -240,7 +240,7 @@ def show_notification(title, message, timeout=5):
         notification.notify(
             title=title,
             message=message,
-            app_name="FISCALINK",
+            app_name="AIBES Fiscalisation",
             timeout=timeout
         )
         return  # Success, no need for fallback
@@ -407,6 +407,16 @@ def on_open_fiscal_day(icon, item):
         next_day = 1
         
     status_code, data = api_call("/api/open_day", method="POST", json_data={"fiscalDayNo": next_day})
+    
+    # ============================================================
+    # NEW: Print full response to terminal
+    # ============================================================
+    print("\n" + "="*60)
+    print("📡 FULL ZIMRA RESPONSE (OPEN DAY):")
+    print(json.dumps(data, indent=2))
+    print("="*60 + "\n")
+    # ============================================================
+
     if status_code == 200:
         http_status = data.get("http_status")
         if http_status == 200:
@@ -421,6 +431,16 @@ def on_open_fiscal_day(icon, item):
 def on_close_fiscal_day(icon, item):
     print("\n📋 Closing fiscal day and generating Z-Report...")
     status_code, data = api_call("/api/close_day", method="POST", json_data={})
+    
+    # ============================================================
+    # NEW: Print full response to terminal
+    # ============================================================
+    print("\n" + "="*60)
+    print("📡 FULL ZIMRA RESPONSE (CLOSE DAY):")
+    print(json.dumps(data, indent=2))
+    print("="*60 + "\n")
+    # ============================================================
+
     if status_code == 200:
         http_status = data.get("http_status")
         if http_status == 200:
@@ -441,7 +461,7 @@ def on_close_fiscal_day(icon, item):
         else:
             zimra_resp = data.get("zimra_response", {})
             error_msg = json.dumps(zimra_resp, indent=2) if isinstance(zimra_resp, dict) else str(zimra_resp)
-            show_notification(" ZIMRA Error", f"Z-Report failed:\n{error_msg[:400]}", timeout=15)
+            show_notification("⚠️ ZIMRA Error", f"Z-Report failed:\n{error_msg[:400]}")
     else:
         error_msg = data.get('error', str(data))
         show_notification("❌ Error", f"Failed to close fiscal day:\n{error_msg}", timeout=10)
@@ -449,16 +469,29 @@ def on_close_fiscal_day(icon, item):
 def on_start_scanner(icon, item):
     """Start the folder scanner."""
     print("\n▶️ Starting scanner...")
-    status_code, settings = api_call("/api/scanner_settings", method="GET")
     
+    # --- LICENSE CHECK ---
+    status_code, license_data = api_call("/api/license_status", method="GET")
+    if status_code == 200:
+        if not license_data.get("is_valid"):
+            status = license_data.get("status", "INVALID")
+            msg = license_data.get("message", "Unknown error")
+            
+            if status == "NOT_SET":
+                show_notification("❌ License Not Set", "Please activate your license in the dashboard before starting the scanner.")
+            elif status == "EXPIRED":
+                show_notification("❌ License Expired", f"Your license has expired. Please contact the developer.\n{msg}")
+            else:
+                show_notification("❌ Invalid License", f"License is invalid for this machine.\n{msg}")
+            return # Stop execution
+    # --- END LICENSE CHECK ---
+
+    status_code, settings = api_call("/api/scanner_settings", method="GET")
     folder_path = settings.get("folder_path", r"C:\Receipt") if status_code == 200 else r"C:\Receipt"
     print_format = settings.get("print_format", "InvoiceA4") if status_code == 200 else "InvoiceA4"
-    
-    # RESTORED: Dynamically fetch the template from the dashboard settings
-    template = settings.get("template", "feedmix") if status_code == 200 else "feedmix" 
+    template = settings.get("template", "aibes_incl") if status_code == 200 else "aibes_incl" 
     
     print(f"   Settings: folder={folder_path}, template={template}, format={print_format}")
-    
     status_code, data = api_call("/api/start_scanning", method="POST", json_data={
         "folder_path": folder_path,
         "receipt_template": template,
@@ -466,7 +499,6 @@ def on_start_scanner(icon, item):
         "process_pdfs": True
     })
     
-    print(f"   Response: {status_code} - {data}")
     if status_code == 200:
         result_status = data.get("status")
         if result_status == "started":
@@ -474,7 +506,7 @@ def on_start_scanner(icon, item):
         elif result_status == "already_running":
             show_notification("ℹ️ Info", "Scanner is already running")
     else:
-        show_notification(" Error", f"Failed to start scanner: {data.get('error', str(data))}")
+        show_notification("❌ Error", f"Failed to start scanner: {data.get('error', str(data))}")
 
 def on_stop_scanner(icon, item):
     print("\n⏹️ Stopping scanner...")
