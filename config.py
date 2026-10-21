@@ -46,6 +46,7 @@ class Config:
     # Device Credentials (Loaded from external file)
     DEVICE_ID = ext_config["device_id"]
     DEVICE_SERIAL_NUMBER = ext_config["device_serial_number"]
+    TAX_ID = int(ext_config.get("tax_id", 515))
     
     # Device Model Info (Required by ZimraClient)
     DEVICE_MODEL_NAME = "server"

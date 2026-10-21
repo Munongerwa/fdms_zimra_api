@@ -1,9 +1,10 @@
 {
-    "device_id": 39285,
-    "device_serial_number": "TEST-089",
-    "cert_path": "C:\\certs",
-    "zimra_api_url": "https://fdmsapitest.zimra.co.zw",
-    "qr_base_url": "https://fdmstest.zimra.co.zw/",
-    "printer_name": "Microsoft Print to PDF",
-    "pos_api_key": ""
+  "device_id": 39285,
+  "device_serial_number": "TEST-089",
+  "cert_path": "C:\\certs",
+  "zimra_api_url": "https://fdmsapitest.zimra.co.zw",
+  "qr_base_url": "https://fdmstest.zimra.co.zw/",
+  "printer_name": "Microsoft Print to PDF",
+  "pos_api_key": "",
+  "tax_id": 517
 }

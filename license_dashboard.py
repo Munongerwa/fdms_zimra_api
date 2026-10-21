@@ -7,9 +7,20 @@ import os
 import sys
 from datetime import datetime, timedelta
 
+# ============================================================
+# FIX: Set License Secret Key for Dashboard
+# This MUST be here so the dashboard can generate keys.
+# ============================================================
+LICENSE_SECRET = "AIBES_FISCALISATION_SUPER_SECRET_KEY_2026_CHANGE_ME!"
+if len(LICENSE_SECRET) < 32:
+    raise ValueError("LICENSE_SECRET must be at least 32 characters long.")
+os.environ.setdefault("FISCALINK_LICENSE_SECRET", LICENSE_SECRET)
+# ============================================================
+
 # Ensure the core module is accessible
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from core.license_manager import generate_license_key, get_machine_id
+
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "developer_licenses.db")
 

@@ -307,14 +307,18 @@ def generate_80mm_thermal_receipt(pdf_payload, verification_code, qr_code_url, d
     story.append(t)
     add_dashed_line()
 
+    # Determine Cashier Name: Use parsed cashier (Sales Person) if available, else fallback to Company Name
+    cashier_name = pdf_payload.get('cashier_name', '') 
+
     totals_data = [
         [Paragraph("<b>Total Excl:</b>", s_tbl), Paragraph(f"{total_excl_sum:.2f}", s_tbl_r)],
         [Paragraph("<b>Total VAT:</b>", s_tbl), Paragraph(f"{total_vat_sum:.2f}", s_tbl_r)],
         [Paragraph("Total Incl:", s_tbl_9pt), Paragraph(f"{total_incl_sum:.2f}", s_tbl_9pt_r)],
         [Paragraph("Currency:", s_tbl), Paragraph(f"<b>{receipt.get('receiptCurrency', 'USD')}</b>", s_tbl_r)],
         [Paragraph("Change:", s_tbl), Paragraph("0.00", s_tbl_r)],
-        [Paragraph("Cashier:", s_tbl), Paragraph(seller_data.get('name', ''), s_tbl_r)]
+        [Paragraph("Cashier:", s_tbl), Paragraph(cashier_name, s_tbl_r)] # Updated to use cashier_name
     ]
+    
     totals_table = Table(totals_data, colWidths=[35*mm, 37*mm])
     totals_table.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'), ('LEFTPADDING', (0, 0), (-1, -1), 0), ('RIGHTPADDING', (0, 0), (-1, -1), 0), ('TOPPADDING', (0, 0), (-1, -1), 1*mm), ('BOTTOMPADDING', (0, 0), (-1, -1), 1*mm)]))
     story.append(totals_table)

@@ -27,12 +27,19 @@ swagger_config = {
     "headers": [],
     "specs": [{"endpoint": 'apispec_1', "route": '/apispec_1.json', "rule_filter": lambda rule: True, "model_filter": lambda tag: True}],
     "static_url_path": "/flasgger_static", "swagger_ui": True, "specs_route": "/docs/",
-    "title": "FISCALINK API", "description": "Comprehensive API for interfacing with the ZIMRA Fiscal Device Gateway (FDMS v7.2).",
+    "title": "AIBES FISCALISATION API", "description": "Comprehensive API for interfacing with the ZIMRA Fiscal Device Gateway (FDMS v7.2).",
     "version": "1.0.0", "uiversion": 3
 }
 swagger = Swagger(app, config=swagger_config)
 init_db()
 zimra = ZimraClient()
+
+LICENSE_SECRET = "AIBES_FISCALISATION_SUPER_SECRET_KEY_2026_CHANGE_ME!"
+
+if len(LICENSE_SECRET) < 32:
+    raise ValueError("LICENSE_SECRET must be at least 32 characters long.")
+
+os.environ.setdefault("FISCALINK_LICENSE_SECRET", LICENSE_SECRET)
 
 def send_os_notification(title, message):
     """Sends a native Windows OS notification that auto-dismisses after 5 seconds."""
@@ -47,9 +54,6 @@ def send_os_notification(title, message):
     except Exception as e:
         print(f"OS Notification failed: {e}")
 
-# ============================================================
-# AUTO FISCAL DAY SCHEDULER
-# ============================================================
 def auto_fiscal_day_scheduler():
     """Background thread to automatically open and close the fiscal day."""
     print("⏰ Fiscal Day Auto-Scheduler started.")
@@ -59,18 +63,15 @@ def auto_fiscal_day_scheduler():
             now = datetime.now()
             current_time = now.time()
             today_str = now.strftime("%Y-%m-%d")
-            # Reset trackers at midnight
             if current_time < dt_time(0, 5):
                 scheduler_state['last_opened_date'] = None
                 scheduler_state['last_closed_date'] = None
-            # Get current ZIMRA status
             try:
                 status_code, status_resp = zimra.get_status()
                 current_status = status_resp.get("fiscalDayStatus", "") if status_code == 200 else ""
             except Exception as e:
                 print(f"⚠️ [SCHEDULER] Could not get ZIMRA status: {e}")
                 current_status = ""
-            # 1. Auto Close at 11:00 PM (23:00)
             if current_time >= dt_time(23, 0) and current_time < dt_time(23, 30):
                 if "Opened" in current_status and scheduler_state['last_closed_date'] != today_str:
                     print(f"\n⏰ [AUTO-SCHEDULER] 11:00 PM reached. Closing fiscal day...")
@@ -83,10 +84,9 @@ def auto_fiscal_day_scheduler():
                                 scheduler_state['last_closed_date'] = today_str
                                 send_os_notification("🌙 Auto Closed", "Fiscal day closed automatically at 11:00 PM.")
                             else:
-                                print(f"️ [AUTO-SCHEDULER] ZIMRA rejected close: {data.get('zimra_response')}")
+                                print(f"⚠️ [AUTO-SCHEDULER] ZIMRA rejected close: {data.get('zimra_response')}")
                     except Exception as e:
                         print(f"❌ [AUTO-SCHEDULER] Error closing day: {e}")
-            # 2. Auto Open at 8:30 AM (08:30)
             if current_time >= dt_time(8, 30) and current_time < dt_time(8, 40):
                 if scheduler_state['last_opened_date'] != today_str:
                     if "Closed" in current_status:
@@ -110,8 +110,7 @@ def auto_fiscal_day_scheduler():
                         except Exception as e:
                             print(f"❌ [AUTO-SCHEDULER] Error opening day: {e}")
                     elif "Opened" in current_status:
-                        # Fallback: If yesterday's day is still open at 8:30 AM, close it first
-                        print(f"️ [AUTO-SCHEDULER] Previous day is still open at 8:30 AM. Closing it first...")
+                        print(f"⚠️ [AUTO-SCHEDULER] Previous day is still open at 8:30 AM. Closing it first...")
                         try:
                             res_close = requests.post("http://localhost:5000/api/close_day", json={}, timeout=60)
                             if res_close.status_code == 200 and res_close.json().get("http_status") == 200:
@@ -131,32 +130,23 @@ def auto_fiscal_day_scheduler():
                             print(f" [AUTO-SCHEDULER] Error in fallback close/open: {e}")
         except Exception as e:
             print(f"❌ [AUTO-SCHEDULER] Unexpected error: {e}")
-        # Sleep for 60 seconds
         time.sleep(60)
 
-# ============================================================
-# DATABASE & SCANNER SETUP
-# ============================================================
 def ensure_scanner_tables():
     with db_lock:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
-            # 1. Create scanner_logs table
             cursor.execute('''CREATE TABLE IF NOT EXISTS scanner_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, 
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, 
                 message TEXT, 
                 status TEXT
             )''')
-            # 2. Create system_config table
             cursor.execute('''CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT)''')
-            # 3. Insert default configurations
             cursor.execute("INSERT OR IGNORE INTO system_config (key, value) VALUES ('scanner_print_format', 'InvoiceA4')")
             cursor.execute("INSERT OR IGNORE INTO system_config (key, value) VALUES ('scanner_folder', 'C:\\Receipt')")
             cursor.execute("INSERT OR IGNORE INTO system_config (key, value) VALUES ('process_pdfs', 'True')")
-            # 4. Insert default template ONLY if it doesn't exist yet
             cursor.execute("INSERT OR IGNORE INTO system_config (key, value) VALUES ('receipt_template', 'aibes_incl')")
-            # 6. Create receipt_items table
             cursor.execute('''CREATE TABLE IF NOT EXISTS receipt_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, 
                 receipt_audit_id INTEGER, 
@@ -171,12 +161,10 @@ def ensure_scanner_tables():
                 tax_percent REAL, 
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )''')
-            # 7. Check if receipt_currency column exists, add if missing (for legacy DBs)
             cursor.execute("PRAGMA table_info(receipt_items)")
             columns = [col[1] for col in cursor.fetchall()]
             if 'receipt_currency' not in columns:
                 cursor.execute("ALTER TABLE receipt_items ADD COLUMN receipt_currency TEXT DEFAULT 'USD'")
-            # 8. Commit all changes
             conn.commit()
 
 ensure_scanner_tables()
@@ -215,10 +203,9 @@ def process_single_file(file_path, folder_path):
     try:
         settings = get_scanner_settings()
         
-        # 1. Parse the file based on extension and template
         if is_pdf:
             template = settings['template']
-            if template.lower() == 'aibes_incl':# NEW: AIBES INCL Template
+            if template.lower() == 'aibes_incl':
                 from core.receipt_parser import parse_aibes_incl_receipt
                 parsed_data = parse_aibes_incl_receipt(file_path)
             elif template.lower() == 'aibes': 
@@ -231,11 +218,9 @@ def process_single_file(file_path, folder_path):
                 from core.receipt_parser import parse_pdf_receipt
                 parsed_data = parse_pdf_receipt(file_path)
         else:
-            # TXT files (Feedmix)
             parsed_data = parse_receipt_file(file_path, template=settings['template'])
             
         state = zimra.get_state()
-        
         receipt_payload = build_zimra_payload(
             parsed_data, 
             device_id=zimra.device_id,
@@ -244,7 +229,6 @@ def process_single_file(file_path, folder_path):
             fiscal_day_no=state['fiscal_day_no']
         )
         
-        # 2. VALIDATION: Duplicate Invoice Number
         invoice_no = str(parsed_data.get('invoice_no', '')).strip()
         if invoice_no:
             with db_lock:
@@ -258,29 +242,23 @@ def process_single_file(file_path, folder_path):
                         shutil.move(file_path, os.path.join(move_to, filename))
                         return f"[VALIDATION FAILED] {filename}"
 
-        # ============================================================
-        # 3. VALIDATION: Credit Note Original Invoice Check
-        # ============================================================
         receipt_type = parsed_data.get('receipt_type', 'FiscalInvoice')
         original_invoice_no = str(parsed_data.get('original_invoice_no', '')).strip()
-        
         if receipt_type == 'CreditNote' and original_invoice_no:
             with db_lock:
                 with sqlite3.connect(DB_PATH) as conn:
                     cursor = conn.execute("SELECT id FROM receipt_audit WHERE invoice_no = ? AND status = 'SUCCESS'", (original_invoice_no,))
                     if not cursor.fetchone():
-                        send_os_notification("❌ Validation Failed", f"Credit note for unexisting invoice: {original_invoice_no}")
+                        send_os_notification(" Validation Failed", f"Credit note for unexisting invoice: {original_invoice_no}")
                         log_to_db(f"[VALIDATION FAILED] {filename} -> Credit note for unexisting invoice {original_invoice_no}", "FAILED")
                         move_to = os.path.join(folder_path, 'Errors')
                         os.makedirs(move_to, exist_ok=True)
                         shutil.move(file_path, os.path.join(move_to, filename))
                         return f"[VALIDATION FAILED] {filename}"
-        # ============================================================
-
+        
         full_payload = {"deviceID": int(zimra.device_id), "receipt": receipt_payload}
         full_payload['receipt']['receiptPrintForm'] = settings['print_format']
         
-        # 4. ZIMRA Payload Validation
         validation_errors = validate_zimra_payload(full_payload)
         if validation_errors:
             audit_data = {
@@ -300,24 +278,16 @@ def process_single_file(file_path, folder_path):
             move_to = os.path.join(folder_path, 'Failed'); os.makedirs(move_to, exist_ok=True); shutil.move(file_path, os.path.join(move_to, filename))
             return f"[VALIDATION FAILED] {filename}"
             
-        # 5. Submit to ZIMRA
         status_code, zimra_response, ver_code, qr_code, hash_b64, receipt_audit_id = zimra.submit_receipt(full_payload)
         
         if status_code == 200:
-            # ============================================================
-            # NEW: Log successful payload to Terminal and Dashboard Scan Log
-            # ============================================================
             print("\n" + "="*60)
             print("✅ SUCCESSFUL INVOICE PAYLOAD:")
             print(f"Filename: {filename} | Verification Code: {ver_code}")
             print(json.dumps(full_payload, indent=2))
             print("="*60 + "\n")
-            
-            # Save to dashboard scanner history log
             log_to_db(f"[SUCCESS PAYLOAD] {filename} | Code: {ver_code}\n{json.dumps(full_payload, indent=2)}", "SUCCESS")
-            # ============================================================
-
-            # Sync counters
+            
             if isinstance(zimra_response, dict):
                 resp_data = zimra_response.get('data', zimra_response) if isinstance(zimra_response.get('data'), dict) else zimra_response
                 new_counter = resp_data.get('receiptCounter')
@@ -334,10 +304,7 @@ def process_single_file(file_path, folder_path):
                         print(f"✅ Synced local counters: receipt_counter={new_counter}, receipt_global_no={new_global}")
                     except Exception as sync_err:
                         print(f"⚠️ Warning: Could not sync local counters: {sync_err}")
-                        
-            # ============================================================
 
-            # Log items to DB
             try:
                 zimra.log_receipt_items(
                     receipt_audit_id=receipt_audit_id,
@@ -349,22 +316,20 @@ def process_single_file(file_path, folder_path):
             except Exception as items_err:
                 print(f"Error storing items: {items_err}")
                 
-            # Get Seller Data for PDF generation/stamping
             try:
                 config_status, config_resp = zimra.get_config()
                 seller_data = {
-                    'name': config_resp.get('deviceBranchName', 'FISCALINK'),
+                    'name': config_resp.get('deviceBranchName', 'AIBES FISCALISATION'),
                     'address': f"{config_resp.get('deviceBranchAddress', {}).get('houseNo', '')} {config_resp.get('deviceBranchAddress', {}).get('street', '')}, {config_resp.get('deviceBranchAddress', {}).get('city', '')}",
                     'tin': config_resp.get('taxPayerTIN', ''), 'vat': config_resp.get('vatNumber', ''),
                     'phone': config_resp.get('deviceBranchContacts', {}).get('phoneNo', ''), 'email': config_resp.get('deviceBranchContacts', {}).get('email', '')
                 }
             except:
-                seller_data = {'name': 'FISCALINK', 'address': '', 'tin': '', 'vat': '', 'phone': '', 'email': ''}
+                seller_data = {'name': 'AIBES FISCALISATION', 'address': '', 'tin': '', 'vat': '', 'phone': '', 'email': ''}
 
-            # Log full payload for Credit Notes
             if receipt_type == 'CreditNote':
                 print("\n" + "="*60)
-                print("📄 CREDIT NOTE SUBMISSION LOG:")
+                print(" CREDIT NOTE SUBMISSION LOG:")
                 print("="*60)
                 print(f"Original Invoice: {original_invoice_no}")
                 print(f"Credit Reason: {parsed_data.get('credit_reason', 'N/A')}")
@@ -372,33 +337,24 @@ def process_single_file(file_path, folder_path):
                 print("="*60 + "\n")
                 log_to_db(f"[CREDIT NOTE] Original Invoice: {original_invoice_no}\nPayload: {json.dumps(full_payload, indent=2)}", "INFO")    
             
-            # ============================================================
-            # 6. OUTPUT GENERATION & PRINTING
-            # ============================================================
             if is_pdf:
                 print_format = settings.get('print_format', 'InvoiceA4')
                 
-                # --- FEEDMIX PDF + 80mm Thermal Format ---
                 if settings['template'].lower() == 'feedmix' and print_format != 'InvoiceA4':
                     from core.pdf_generator import generate_80mm_thermal_receipt
                     pdf_payload = {"receipt": full_payload['receipt'], "company_name": seller_data['name'], "seller_data": seller_data}
                     serial_number = Config.DEVICE_SERIAL_NUMBER
-                    
                     pdf_buffer = generate_80mm_thermal_receipt(
                         pdf_payload, ver_code, qr_code, 
                         zimra.device_id, state['fiscal_day_no'], 
                         seller_data, serial_number
                     )
-                    
                     move_to = os.path.join(folder_path, 'Processed')
                     os.makedirs(move_to, exist_ok=True)
-                    
                     pdf_filename = f"80mm_{filename}"
                     pdf_path = os.path.join(move_to, pdf_filename)
                     with open(pdf_path, 'wb') as f: 
                         f.write(pdf_buffer.getvalue())
-                    
-                    # Auto-print to SPECIFIC printer defined in config.json
                     try:
                         import time
                         import win32api
@@ -409,22 +365,18 @@ def process_single_file(file_path, folder_path):
                             print(f"🖨️ Sent {pdf_filename} to specific printer: {printer_name}")
                         else:
                             win32api.ShellExecute(0, "print", pdf_path, None, ".", 1)
-                            print(f"️ Sent {pdf_filename} to default printer.")
+                            print(f"🖨️ Sent {pdf_filename} to default printer.")
                     except Exception as print_err:
-                        print(f"⚠️ Could not auto-print: {print_err}")
-                        
+                        print(f"️ Could not auto-print: {print_err}")
                     shutil.move(file_path, os.path.join(move_to, filename))
                     send_os_notification("✅ 80mm Receipt Generated", f"{filename}\nCode: {ver_code}")
                     log_to_db(f"[SUCCESS] {filename} | Code: {ver_code} | 80mm PDF Generated & Printed", "SUCCESS")
-
-                # --- STAMP PDF (AIBES, AIBES EXCL or Feedmix with InvoiceA4) ---
                 else:
                     stamped_filename = filename.replace('.pdf', '_stamped.pdf')
                     stamped_path = os.path.join(folder_path, stamped_filename)
                     fiscal_day_no = state.get('fiscal_day_no', 'N/A')
                     device_id = zimra.device_id
                     receipt_global_no = state.get('receipt_global_no', 'N/A')
-                    
                     if settings['template'].lower() == 'feedmix':
                         from core.pdf_stamper import stamp_qr_on_pdf_feedmix
                         stamp_success = stamp_qr_on_pdf_feedmix(
@@ -453,26 +405,25 @@ def process_single_file(file_path, folder_path):
                         log_to_db(f"[WARNING] {filename} | Code: {ver_code} | Moved (Stamp Failed)", "WARNING")
                         
             else:
-                # --- TXT FILE: Generate 80mm Receipt PDF ---
                 from core.pdf_generator import generate_80mm_thermal_receipt
-                pdf_payload = {"receipt": full_payload['receipt'], "company_name": seller_data['name'], "seller_data": seller_data}
+                pdf_payload = {
+                    "receipt": full_payload['receipt'], 
+                    "company_name": seller_data['name'], 
+                    "seller_data": seller_data,
+                    "cashier_name": parsed_data.get('cashier', '') 
+                }
                 serial_number = Config.DEVICE_SERIAL_NUMBER
-                
                 pdf_buffer = generate_80mm_thermal_receipt(
                     pdf_payload, ver_code, qr_code, 
                     zimra.device_id, state['fiscal_day_no'], 
                     seller_data, serial_number
                 )
-                
                 move_to = os.path.join(folder_path, 'Processed')
                 os.makedirs(move_to, exist_ok=True)
-                
                 pdf_filename = f"Receipt_{filename.replace('.txt', '.pdf')}"
                 pdf_path = os.path.join(move_to, pdf_filename)
                 with open(pdf_path, 'wb') as f: 
                     f.write(pdf_buffer.getvalue())
-                
-                # Auto-print to SPECIFIC printer defined in config.json
                 try:
                     import time
                     import win32api
@@ -486,7 +437,6 @@ def process_single_file(file_path, folder_path):
                         print(f"🖨️ Sent {pdf_filename} to default printer.")
                 except Exception as print_err:
                     print(f"⚠️ Could not auto-print: {print_err}")
-                
                 shutil.move(file_path, os.path.join(move_to, filename))
                 send_os_notification("✅ 80mm Receipt Generated", f"{filename}\nCode: {ver_code}")
                 log_to_db(f"[SUCCESS] {filename} | Code: {ver_code} | 80mm PDF Generated & Saved", "SUCCESS")
@@ -494,14 +444,9 @@ def process_single_file(file_path, folder_path):
             return f"[SUCCESS] {filename} | Code: {ver_code}"
             
         else:
-            # ZIMRA Submission Failed
             error_msg = zimra_response if isinstance(zimra_response, str) else json.dumps(zimra_response, indent=2)
-            
-            # ============================================================
-            # Print color-coded ZIMRA Validation Errors to terminal
-            # ============================================================
             print("\n" + "="*60)
-            print(" ZIMRA SUBMISSION FAILED - VALIDATION ERRORS:")
+            print("🔴 ZIMRA SUBMISSION FAILED - VALIDATION ERRORS:")
             print("="*60)
             if isinstance(zimra_response, dict):
                 errors_list = zimra_response.get('validationErrors', zimra_response.get('errors', []))
@@ -514,22 +459,20 @@ def process_single_file(file_path, folder_path):
                         severity = str(err.get('severity', err.get('color', err.get('level', 'Red')))).upper()
                         message = err.get('message', err.get('description', str(err)))
                         if 'RED' in severity or 'CRITICAL' in severity:
-                            print(f"🔴 [RED - CRITICAL] {message}")
+                            print(f" [RED - CRITICAL] {message}")
                         elif 'YELLOW' in severity or 'MINOR' in severity or 'WARNING' in severity:
                             print(f"🟡 [YELLOW - MINOR] {message}")
                         elif 'GREY' in severity or 'GRAY' in severity or 'TECHNICAL' in severity or 'INFO' in severity:
-                            print(f" [GREY - TECHNICAL] {message}")
+                            print(f"⚪ [GREY - TECHNICAL] {message}")
                         else:
-                            print(f"️  [{severity}] {message}")
+                            print(f"⚠️  [{severity}] {message}")
                 else:
                     print("Raw ZIMRA Response:")
                     print(error_msg)
             else:
                 print(error_msg)
             print("="*60 + "\n")
-            # ============================================================
-
-            send_os_notification("❌ ZIMRA Submission Failed", f"{filename}\nStatus {status_code}")
+            send_os_notification(" ZIMRA Submission Failed", f"{filename}\nStatus {status_code}")
             payload_str = json.dumps(full_payload, indent=2) if full_payload else "Payload not available"
             log_msg = f"[ZIMRA ERROR] {filename} -> Status {status_code}: {error_msg}\n\n--- GENERATED PAYLOAD ---\n{payload_str}\n-------------------------"
             log_to_db(log_msg, "FAILED")
@@ -537,29 +480,22 @@ def process_single_file(file_path, folder_path):
             return f"[FAILED] {filename} -> ZIMRA Error {status_code}"
             
     except Exception as e:
-        # System Error
         send_os_notification("⚠️ System Error", f"Failed to process {filename}\n{str(e)[:100]}")
         payload_str = json.dumps(full_payload, indent=2) if full_payload else "Payload not available (error occurred before payload generation)"
         log_msg = f"[ERROR] {filename} -> {str(e)}\n\n--- GENERATED PAYLOAD ---\n{payload_str}\n-------------------------"
         log_to_db(log_msg, "ERROR")
-        
-        # Move to Errors folder and guarantee deletion from source
         move_to = os.path.join(folder_path, 'Errors')
         os.makedirs(move_to, exist_ok=True)
         dest_path = os.path.join(move_to, filename)
-        
         try:
             shutil.move(file_path, dest_path)
         except Exception as move_err:
             print(f"Could not move file: {move_err}")
-            
-        # Safety check: If the file still exists in the original folder, force delete it
         if os.path.exists(file_path):
             try:
                 os.remove(file_path)
             except Exception as del_err:
                 print(f"Could not delete original file: {del_err}")
-                
         return f"[ERROR] {filename}"
 
 def scanner_loop(folder_path):
@@ -587,9 +523,6 @@ def scanner_loop(folder_path):
 
 @app.route('/api/start_scanning', methods=['POST'])
 def api_start_scanning():
-    # ============================================================
-    # LICENSE ENFORCEMENT CHECK
-    # ============================================================
     from core.license_manager import get_license_status
     license_status = get_license_status()
     if not license_status.get("is_valid"):
@@ -603,8 +536,7 @@ def api_start_scanning():
         elif status == "INVALID":
             error_message = f"Invalid License: {msg}"
         return jsonify({"status": "error", "message": error_message}), 403
-    # ============================================================
-    # --- EXISTING SCANNER START LOGIC GOES BELOW HERE ---
+
     data = request.json or {}
     folder_path = data.get('folder_path', r'C:\Receipt')
     process_pdfs = data.get('process_pdfs', True)
@@ -664,16 +596,11 @@ def api_status():
 def api_open_day():
     data = request.json or {}
     fiscal_day_no = data.get('fiscalDayNo')
-    # Call ZIMRA API
     status_code, response = zimra.open_day(fiscal_day_no)
-    # ============================================================
-    # NEW: Print full response to terminal for debugging CounterMismatch
-    # ============================================================
     print("\n" + "="*60)
     print("🔴 RAW ZIMRA SERVER RESPONSE (OPEN DAY):")
     print(json.dumps(response, indent=2, default=str))
     print("="*60 + "\n")
-    # ============================================================
     if status_code == 200:
         actual_day_no = response.get('fiscalDayNo', fiscal_day_no) if isinstance(response, dict) else fiscal_day_no
         zimra.reset_daily_counter(actual_day_no, datetime.now().strftime("%Y-%m-%d"))
@@ -728,14 +655,18 @@ def api_submit_receipt():
         if receipt_type.lower() == 'creditnote':
             amt1, amt2, amt3 = -abs(amt1), -abs(amt2), -abs(amt3); tax1 = -abs(tax1); total = -abs(total)
         item_name = data.get('itemName', 'Item')
+        
+        tax_id_std = Config.TAX_ID
+        tax_id_zero = 2
+        
         receipt_lines = [
-            {"receiptLineType": "Sale", "receiptLineNo": 1, "receiptLineHSCode": "10000000", "receiptLineName": f"{item_name} (Standard)", "receiptLinePrice": round(amt1 / quantity, 2), "receiptLineQuantity": quantity, "receiptLineTotal": amt1, "taxCode": "A", "taxPercent": tax_percent, "taxID": 515},
-            {"receiptLineType": "Sale", "receiptLineNo": 2, "receiptLineHSCode": "20000000", "receiptLineName": f"{item_name} (Exempt)", "receiptLinePrice": round(amt2 / quantity, 2), "receiptLineQuantity": quantity, "receiptLineTotal": amt2, "taxCode": "B", "taxPercent": 0.0, "taxID": 2},
-            {"receiptLineType": "Sale", "receiptLineNo": 3, "receiptLineHSCode": "20000000", "receiptLineName": f"{item_name} (Zero Rated)", "receiptLinePrice": round(amt3 / quantity, 2), "receiptLineQuantity": quantity, "receiptLineTotal": amt3, "taxCode": "B", "taxPercent": 0.0, "taxID": 2}
+            {"receiptLineType": "Sale", "receiptLineNo": 1, "receiptLineHSCode": "10000000", "receiptLineName": f"{item_name} (Standard)", "receiptLinePrice": round(amt1 / quantity, 2), "receiptLineQuantity": quantity, "receiptLineTotal": amt1, "taxCode": "A", "taxPercent": tax_percent, "taxID": tax_id_std},
+            {"receiptLineType": "Sale", "receiptLineNo": 2, "receiptLineHSCode": "20000000", "receiptLineName": f"{item_name} (Exempt)", "receiptLinePrice": round(amt2 / quantity, 2), "receiptLineQuantity": quantity, "receiptLineTotal": amt2, "taxCode": "B", "taxPercent": 0.0, "taxID": tax_id_zero},
+            {"receiptLineType": "Sale", "receiptLineNo": 3, "receiptLineHSCode": "20000000", "receiptLineName": f"{item_name} (Zero Rated)", "receiptLinePrice": round(amt3 / quantity, 2), "receiptLineQuantity": quantity, "receiptLineTotal": amt3, "taxCode": "B", "taxPercent": 0.0, "taxID": tax_id_zero}
         ]
         receipt_taxes = [
-            {"taxCode": "A", "taxPercent": tax_percent, "taxID": 515, "taxAmount": tax1, "salesAmountWithTax": amt1},
-            {"taxCode": "B", "taxPercent": 0.0, "taxID": 2, "taxAmount": 0.00, "salesAmountWithTax": round(amt2 + amt3, 2)}
+            {"taxCode": "A", "taxPercent": tax_percent, "taxID": tax_id_std, "taxAmount": tax1, "salesAmountWithTax": amt1},
+            {"taxCode": "B", "taxPercent": 0.0, "taxID": tax_id_zero, "taxAmount": 0.00, "salesAmountWithTax": round(amt2 + amt3, 2)}
         ]
         payload = {
             "deviceID": int(zimra.device_id), "receipt": {
@@ -828,31 +759,30 @@ def api_close_day():
                 sale_by_tax[curr][counter_type][tax_pct] += total
                 sale_tax_by_tax[curr][tax_counter_type][tax_pct] += tax_amt
         fiscal_counters = []
+        
+        tax_id_std = Config.TAX_ID
+        tax_id_zero = 2
+        
         for curr, r_types in sale_by_tax.items():
             for r_type, taxes in r_types.items():
                 for tax_pct, val in taxes.items():
                     if val != 0:
-                        tax_id = 515 if tax_pct == 15.5 else (2 if tax_pct == 0.0 else 515)
+                        tax_id = tax_id_std if tax_pct > 0 else tax_id_zero
                         fiscal_counters.append({"fiscalCounterType": r_type, "fiscalCounterCurrency": curr, "fiscalCounterTaxPercent": float(f"{float(tax_pct):.2f}"), "fiscalCounterTaxID": int(tax_id), "fiscalCounterValue": float(f"{float(val):.2f}")})
         for curr, r_types in sale_tax_by_tax.items():
             for r_type, taxes in r_types.items():
                 for tax_pct, val in taxes.items():
                     if val != 0:
-                        tax_id = 515 if tax_pct == 15.5 else (2 if tax_pct == 0.0 else 515)
+                        tax_id = tax_id_std if tax_pct > 0 else tax_id_zero
                         fiscal_counters.append({"fiscalCounterType": r_type, "fiscalCounterCurrency": curr, "fiscalCounterTaxPercent": float(f"{float(tax_pct):.2f}"), "fiscalCounterTaxID": int(tax_id), "fiscalCounterValue": float(f"{float(val):.2f}")})
         for (curr, mtype), val in balance_by_money.items():
             if val != 0: 
                 fiscal_counters.append({"fiscalCounterType": "BalanceByMoneyType", "fiscalCounterCurrency": curr, "fiscalCounterMoneyType": mtype, "fiscalCounterValue": float(f"{float(val):.2f}")})
-        # Call ZIMRA API
         status_code, response = zimra.close_day(fiscal_day_no, last_receipt_counter, fiscal_counters)
-        # ============================================================
-        # NEW: Print full response to terminal for debugging CounterMismatch
-        # ============================================================
         print("\n" + "="*60)
         print("🔴 RAW ZIMRA SERVER RESPONSE (CLOSE DAY):")
         print(json.dumps(response, indent=2, default=str))
         print("="*60 + "\n")
-        # ============================================================
         z_report = {
             "fiscal_day_no": fiscal_day_no, 
             "device_id": zimra.device_id, 
@@ -890,12 +820,10 @@ def check_zimra_receipt(qr_url):
     """Verify a stored receipt QR URL using the public ZIMRA receipt page."""
     if not qr_url:
         return "Unverified", "No QR verification URL is stored.", {}
-
     configured_host = urlparse(Config.QR_BASE_URL).hostname
     current_url = str(qr_url).strip()
     if not configured_host:
         return "Unverified", "The configured ZIMRA QR host is invalid.", {}
-
     for _ in range(6):
         response = None
         parsed_url = urlparse(current_url)
@@ -909,10 +837,8 @@ def check_zimra_receipt(qr_url):
             )
         except ValueError:
             is_trusted_url = False
-
         if not is_trusted_url:
             return "Unverified", "QR URL or redirect is not on the configured ZIMRA host.", {}
-
         try:
             response = requests.get(
                 current_url,
@@ -925,7 +851,6 @@ def check_zimra_receipt(qr_url):
                     return "Unverified", "ZIMRA returned a redirect without a destination.", {}
                 current_url = urljoin(current_url, redirect_url)
                 continue
-
             if response.status_code != 200:
                 return "Unverified", f"ZIMRA returned HTTP {response.status_code}.", {}
             response.raise_for_status()
@@ -943,7 +868,6 @@ def check_zimra_receipt(qr_url):
                 status, detail = "Valid", "Receipt is valid on ZIMRA."
             else:
                 status = None
-
             if status is None:
                 error_block = soup.find(class_="val-errors-block")
                 if error_block:
@@ -954,7 +878,6 @@ def check_zimra_receipt(qr_url):
                     detail = " | ".join(errors) or error_block.get_text(" ", strip=True)
                     return "Invalid", detail or "ZIMRA did not validate this receipt.", {}
                 return "Invalid", "ZIMRA did not validate this receipt.", {}
-
             customer = {"customer_name": "N/A", "customer_vat": "N/A", "customer_tin": "N/A"}
             form = soup.find("form", action=lambda action: action and "/Receipt/Print" in action)
             if form:
@@ -1000,7 +923,6 @@ def check_zimra_receipt(qr_url):
                                     buyer_details = buyer_match.group(1)
                                 else:
                                     buyer_details = print_text
-
                                 tin_match = re.search(
                                     r"\bTin:\s*([^\s]+)", buyer_details, re.IGNORECASE
                                 )
@@ -1022,7 +944,6 @@ def check_zimra_receipt(qr_url):
         finally:
             if response is not None:
                 response.close()
-
     return "Unverified", "ZIMRA verification exceeded the redirect limit.", {}
 
 @app.route('/api/receipt_verification', methods=['GET'])
@@ -1035,14 +956,13 @@ def api_receipt_verification():
                 conn.row_factory = sqlite3.Row
                 receipts = conn.execute(
                     """SELECT id, invoice_no, fiscal_day_no, receipt_global_no, total_amount,
-                              receipt_currency, verification_code, qr_code, created_at
-                       FROM receipt_audit
-                       ORDER BY created_at DESC, id DESC
-                       LIMIT 20"""
+                    receipt_currency, verification_code, qr_code, created_at
+                    FROM receipt_audit
+                    ORDER BY created_at DESC, id DESC
+                    LIMIT 20"""
                 ).fetchall()
             finally:
                 conn.close()
-
         def verify_receipt(row):
             receipt = dict(row)
             status, detail, customer = check_zimra_receipt(receipt.get("qr_code"))
@@ -1050,10 +970,8 @@ def api_receipt_verification():
             receipt["zimra_detail"] = detail
             receipt.update(customer)
             return receipt
-
         with ThreadPoolExecutor(max_workers=5) as executor:
             verified_receipts = list(executor.map(verify_receipt, receipts))
-
         valid = [receipt for receipt in verified_receipts if receipt["zimra_status"] == "Valid"]
         invalid = [receipt for receipt in verified_receipts if receipt["zimra_status"] == "Invalid"]
         unverified = [receipt for receipt in verified_receipts if receipt["zimra_status"] == "Unverified"]
@@ -1124,7 +1042,7 @@ def api_print_pdf():
                 if row and row['fiscal_day_no']: fiscal_day_no = row['fiscal_day_no']
         config_status, config_resp = zimra.get_config()
         seller_data = {
-            'name': config_resp.get('deviceBranchName', 'FISCALINK'),
+            'name': config_resp.get('deviceBranchName', 'AIBES FISCALISATION'),
             'address': f"{config_resp.get('deviceBranchAddress', {}).get('houseNo', '')} {config_resp.get('deviceBranchAddress', {}).get('street', '')}, {config_resp.get('deviceBranchAddress', {}).get('city', '')}",
             'tin': config_resp.get('taxPayerTIN', ''), 'vat': config_resp.get('vatNumber', ''),
             'phone': config_resp.get('deviceBranchContacts', {}).get('phoneNo', ''), 'email': config_resp.get('deviceBranchContacts', {}).get('email', '')
@@ -1160,7 +1078,7 @@ def api_print_test_80mm():
     try:
         config_status, config_resp = zimra.get_config()
         seller_data = {
-            'name': config_resp.get('deviceBranchName', 'FISCALINK'),
+            'name': config_resp.get('deviceBranchName', 'AIBES FISCALISATION'),
             'address': f"{config_resp.get('deviceBranchAddress', {}).get('houseNo', '')} {config_resp.get('deviceBranchAddress', {}).get('street', '')}, {config_resp.get('deviceBranchAddress', {}).get('city', '')}",
             'tin': config_resp.get('taxPayerTIN', ''), 'vat': config_resp.get('vatNumber', ''),
             'phone': config_resp.get('deviceBranchContacts', {}).get('phoneNo', ''), 'email': config_resp.get('deviceBranchContacts', {}).get('email', '')
@@ -1290,7 +1208,7 @@ def start_auto_scheduler():
     """Start the auto fiscal day scheduler in a background thread."""
     scheduler_thread = threading.Thread(target=auto_fiscal_day_scheduler, daemon=True, name="FiscalDayScheduler")
     scheduler_thread.start()
-    print("⏰ Auto Fiscal Day Scheduler started in background.")
+    print(" Auto Fiscal Day Scheduler started in background.")
 
 if __name__ == '__main__':
     print("\n" + "="*60)
@@ -1305,7 +1223,7 @@ if __name__ == '__main__':
             device_id = config_resp.get('deviceID', zimra.device_id)
             print(f"✅ Successfully connected to ZIMRA FDMS.")
             print(f"🏢 Company Name: {company_name}")
-            print(f" Device ID:      {device_id}")
+            print(f"📟 Device ID:      {device_id}")
             print("\n" + "="*60)
             print("✅ ACCEPTED TAX IDs FOR THIS DEVICE:")
             print("="*60)
@@ -1317,15 +1235,14 @@ if __name__ == '__main__':
                     tax_name = tax.get('taxName', 'Unknown')
                     print(f"   Tax ID: {str(tax_id):<4} | Rate: {str(tax_pct):>5}% | Name: {tax_name}")
             else:
-                print("  ️ No applicable taxes returned by ZIMRA. Check device registration.")
+                print("⚠️ No applicable taxes returned by ZIMRA. Check device registration.")
             print("="*60 + "\n")
         else:
-            print("️  Could not fetch company details from ZIMRA.")
+            print("⚠️ Could not fetch company details from ZIMRA.")
     except Exception as e:
         print(f"❌ CRITICAL ERROR fetching ZIMRA config: {e}")
     print("="*60)
     print("✅ Server is running on http://0.0.0.0:5000")
     print("="*60 + "\n")
-    # Start the scheduler for development testing
     start_auto_scheduler()
     app.run(host='0.0.0.0', port=5000, debug=False)
