@@ -20,6 +20,8 @@ from core.zimra_client import ZimraClient, init_db, DB_PATH, db_lock
 from core.pdf_generator import generate_zimra_a4_pdf, generate_z_report_pdf
 from core.receipt_parser import parse_receipt_file, build_zimra_payload
 from core.zimra_validator import validate_zimra_payload
+from core.printer_manager import send_pdf_to_printer
+from core.pos import create_pos_blueprint
 from config import Config
 
 app = Flask(__name__)
@@ -33,8 +35,9 @@ swagger_config = {
 swagger = Swagger(app, config=swagger_config)
 init_db()
 zimra = ZimraClient()
+app.register_blueprint(create_pos_blueprint(zimra))
 
-LICENSE_SECRET = "AIBES_FISCALISATION_SUPER_SECRET_KEY_2026_CHANGE_ME!"
+LICENSE_SECRET = "AIBES_FISCALISATION_SUPER_SECRET_KEY_2026_V2"
 
 if len(LICENSE_SECRET) < 32:
     raise ValueError("LICENSE_SECRET must be at least 32 characters long.")
@@ -200,9 +203,11 @@ def process_single_file(file_path, folder_path):
     full_payload = None
     is_pdf = filename.lower().endswith('.pdf')
     
+
     try:
         settings = get_scanner_settings()
         
+        # 1. Parse the file based on extension and template
         if is_pdf:
             template = settings['template']
             if template.lower() == 'aibes_incl':
@@ -218,6 +223,7 @@ def process_single_file(file_path, folder_path):
                 from core.receipt_parser import parse_pdf_receipt
                 parsed_data = parse_pdf_receipt(file_path)
         else:
+            # TXT files (Melivo, Feedmix, QuickBooks)
             parsed_data = parse_receipt_file(file_path, template=settings['template'])
             
         state = zimra.get_state()
@@ -229,19 +235,24 @@ def process_single_file(file_path, folder_path):
             fiscal_day_no=state['fiscal_day_no']
         )
         
-        invoice_no = str(parsed_data.get('invoice_no', '')).strip()
-        if invoice_no:
+        # Extract and sanitize Invoice Number for file naming
+        invoice_no = str(parsed_data.get('invoice_no', 'Unknown')).strip()
+        safe_invoice_no = re.sub(r'[^\w\-]', '_', invoice_no) if invoice_no != 'Unknown' else 'Unknown_Invoice'
+        
+        # 2. VALIDATION: Duplicate Invoice Number
+        if invoice_no and invoice_no != 'Unknown':
             with db_lock:
                 with sqlite3.connect(DB_PATH) as conn:
                     cursor = conn.execute("SELECT id FROM receipt_audit WHERE invoice_no = ? AND status = 'SUCCESS'", (invoice_no,))
                     if cursor.fetchone():
-                        send_os_notification("❌ Validation Failed", f"Duplicate Invoice Number: {invoice_no}")
+                        send_os_notification(" Validation Failed", f"Duplicate Invoice Number: {invoice_no}")
                         log_to_db(f"[VALIDATION FAILED] {filename} -> Duplicate Invoice Number {invoice_no}", "FAILED")
                         move_to = os.path.join(folder_path, 'Failed')
                         os.makedirs(move_to, exist_ok=True)
                         shutil.move(file_path, os.path.join(move_to, filename))
                         return f"[VALIDATION FAILED] {filename}"
 
+        # 3. VALIDATION: Credit Note Original Invoice Check
         receipt_type = parsed_data.get('receipt_type', 'FiscalInvoice')
         original_invoice_no = str(parsed_data.get('original_invoice_no', '')).strip()
         if receipt_type == 'CreditNote' and original_invoice_no:
@@ -249,7 +260,7 @@ def process_single_file(file_path, folder_path):
                 with sqlite3.connect(DB_PATH) as conn:
                     cursor = conn.execute("SELECT id FROM receipt_audit WHERE invoice_no = ? AND status = 'SUCCESS'", (original_invoice_no,))
                     if not cursor.fetchone():
-                        send_os_notification(" Validation Failed", f"Credit note for unexisting invoice: {original_invoice_no}")
+                        send_os_notification("❌ Validation Failed", f"Credit note for unexisting invoice: {original_invoice_no}")
                         log_to_db(f"[VALIDATION FAILED] {filename} -> Credit note for unexisting invoice {original_invoice_no}", "FAILED")
                         move_to = os.path.join(folder_path, 'Errors')
                         os.makedirs(move_to, exist_ok=True)
@@ -259,6 +270,7 @@ def process_single_file(file_path, folder_path):
         full_payload = {"deviceID": int(zimra.device_id), "receipt": receipt_payload}
         full_payload['receipt']['receiptPrintForm'] = settings['print_format']
         
+        # 4. ZIMRA Payload Validation
         validation_errors = validate_zimra_payload(full_payload)
         if validation_errors:
             audit_data = {
@@ -271,23 +283,25 @@ def process_single_file(file_path, folder_path):
                 'zimra_response': json.dumps({"validation_errors": validation_errors}), 'status': 'FAILED'
             }
             zimra.log_receipt_audit(audit_data)
-            send_os_notification("⚠️ Validation Failed", f"{filename}\n{', '.join(validation_errors)[:100]}")
+            send_os_notification("️ Validation Failed", f"{filename}\n{', '.join(validation_errors)[:100]}")
             payload_str = json.dumps(full_payload, indent=2)
             log_msg = f"[VALIDATION FAILED] {filename} -> {', '.join(validation_errors)}\n\n--- GENERATED PAYLOAD ---\n{payload_str}\n-------------------------"
             log_to_db(log_msg, "FAILED")
             move_to = os.path.join(folder_path, 'Failed'); os.makedirs(move_to, exist_ok=True); shutil.move(file_path, os.path.join(move_to, filename))
             return f"[VALIDATION FAILED] {filename}"
             
+        # 5. Submit to ZIMRA
         status_code, zimra_response, ver_code, qr_code, hash_b64, receipt_audit_id = zimra.submit_receipt(full_payload)
         
         if status_code == 200:
             print("\n" + "="*60)
             print("✅ SUCCESSFUL INVOICE PAYLOAD:")
-            print(f"Filename: {filename} | Verification Code: {ver_code}")
+            print(f"Filename: {filename} | Invoice: {safe_invoice_no} | Code: {ver_code}")
             print(json.dumps(full_payload, indent=2))
             print("="*60 + "\n")
             log_to_db(f"[SUCCESS PAYLOAD] {filename} | Code: {ver_code}\n{json.dumps(full_payload, indent=2)}", "SUCCESS")
             
+            # Sync counters
             if isinstance(zimra_response, dict):
                 resp_data = zimra_response.get('data', zimra_response) if isinstance(zimra_response.get('data'), dict) else zimra_response
                 new_counter = resp_data.get('receiptCounter')
@@ -329,7 +343,7 @@ def process_single_file(file_path, folder_path):
 
             if receipt_type == 'CreditNote':
                 print("\n" + "="*60)
-                print(" CREDIT NOTE SUBMISSION LOG:")
+                print("📄 CREDIT NOTE SUBMISSION LOG:")
                 print("="*60)
                 print(f"Original Invoice: {original_invoice_no}")
                 print(f"Credit Reason: {parsed_data.get('credit_reason', 'N/A')}")
@@ -337,9 +351,13 @@ def process_single_file(file_path, folder_path):
                 print("="*60 + "\n")
                 log_to_db(f"[CREDIT NOTE] Original Invoice: {original_invoice_no}\nPayload: {json.dumps(full_payload, indent=2)}", "INFO")    
             
+            # ============================================================
+            # 6. OUTPUT GENERATION & PRINTING
+            # ============================================================
             if is_pdf:
                 print_format = settings.get('print_format', 'InvoiceA4')
                 
+                # --- FEEDMIX PDF + 80mm Thermal Format ---
                 if settings['template'].lower() == 'feedmix' and print_format != 'InvoiceA4':
                     from core.pdf_generator import generate_80mm_thermal_receipt
                     pdf_payload = {"receipt": full_payload['receipt'], "company_name": seller_data['name'], "seller_data": seller_data}
@@ -351,32 +369,37 @@ def process_single_file(file_path, folder_path):
                     )
                     move_to = os.path.join(folder_path, 'Processed')
                     os.makedirs(move_to, exist_ok=True)
-                    pdf_filename = f"80mm_{filename}"
+                    
+                    pdf_filename = f"{safe_invoice_no}_80mm.pdf"
                     pdf_path = os.path.join(move_to, pdf_filename)
                     with open(pdf_path, 'wb') as f: 
                         f.write(pdf_buffer.getvalue())
+                    
+                    # Send the generated thermal receipt through the Windows spooler.
                     try:
-                        import time
-                        import win32api
-                        time.sleep(1.5)
-                        printer_name = getattr(Config, 'PRINTER_NAME', None)
-                        if printer_name:
-                            win32api.ShellExecute(0, "printto", pdf_path, f'"{printer_name}"', ".", 0)
-                            print(f"🖨️ Sent {pdf_filename} to specific printer: {printer_name}")
-                        else:
-                            win32api.ShellExecute(0, "print", pdf_path, None, ".", 1)
-                            print(f"🖨️ Sent {pdf_filename} to default printer.")
+                        printer_name, job_id = send_pdf_to_printer(
+                            pdf_path,
+                            getattr(Config, 'PRINTER_NAME', ''),
+                            send_os_notification,
+                        )
+                        job_detail = f" (job {job_id})" if job_id is not None else ""
+                        print(f"🖨️ Submitted {pdf_filename} to {printer_name}{job_detail}.")
                     except Exception as print_err:
-                        print(f"️ Could not auto-print: {print_err}")
+                        print(f"⚠️ Could not auto-print: {print_err}")
+                        send_os_notification("Receipt print failed", str(print_err))
+                        
                     shutil.move(file_path, os.path.join(move_to, filename))
                     send_os_notification("✅ 80mm Receipt Generated", f"{filename}\nCode: {ver_code}")
                     log_to_db(f"[SUCCESS] {filename} | Code: {ver_code} | 80mm PDF Generated & Printed", "SUCCESS")
+                    
+                # --- STAMP PDF (AIBES, AIBES EXCL or Feedmix with InvoiceA4) ---
                 else:
-                    stamped_filename = filename.replace('.pdf', '_stamped.pdf')
+                    stamped_filename = f"{safe_invoice_no}_stamped.pdf"
                     stamped_path = os.path.join(folder_path, stamped_filename)
                     fiscal_day_no = state.get('fiscal_day_no', 'N/A')
                     device_id = zimra.device_id
                     receipt_global_no = state.get('receipt_global_no', 'N/A')
+                    
                     if settings['template'].lower() == 'feedmix':
                         from core.pdf_stamper import stamp_qr_on_pdf_feedmix
                         stamp_success = stamp_qr_on_pdf_feedmix(
@@ -395,17 +418,19 @@ def process_single_file(file_path, folder_path):
                         os.makedirs(move_to, exist_ok=True)
                         shutil.move(stamped_path, os.path.join(move_to, stamped_filename))
                         if os.path.exists(file_path): os.remove(file_path)
-                        send_os_notification("✅ PDF Successfully Stamped", f"{filename}\nVerification Code: {ver_code}")
+                        send_os_notification("✅ PDF Successfully Stamped", f"{safe_invoice_no}\nVerification Code: {ver_code}")
                         log_to_db(f"[SUCCESS] {filename} | Code: {ver_code} | QR Stamped & Moved to Processed", "SUCCESS")
                     else:
                         move_to = os.path.join(folder_path, 'Processed')
                         os.makedirs(move_to, exist_ok=True)
                         shutil.move(file_path, os.path.join(move_to, filename))
-                        send_os_notification("⚠️ Stamp Failed", f"{filename} was fiscalized but stamping failed.")
+                        send_os_notification("⚠️ Stamp Failed", f"{safe_invoice_no} was fiscalized but stamping failed.")
                         log_to_db(f"[WARNING] {filename} | Code: {ver_code} | Moved (Stamp Failed)", "WARNING")
                         
             else:
-                from core.pdf_generator import generate_80mm_thermal_receipt
+                # --- TXT FILE: Generate BOTH 80mm and A4 Receipt PDFs ---
+                from core.pdf_generator import generate_80mm_thermal_receipt, generate_zimra_a4_pdf
+                
                 pdf_payload = {
                     "receipt": full_payload['receipt'], 
                     "company_name": seller_data['name'], 
@@ -413,37 +438,63 @@ def process_single_file(file_path, folder_path):
                     "cashier_name": parsed_data.get('cashier', '') 
                 }
                 serial_number = Config.DEVICE_SERIAL_NUMBER
+                
+                # 1. Generate 80mm Thermal Receipt
                 pdf_buffer = generate_80mm_thermal_receipt(
                     pdf_payload, ver_code, qr_code, 
                     zimra.device_id, state['fiscal_day_no'], 
                     seller_data, serial_number
                 )
+                
+                # 2. Generate A4 Invoice (Standard ZIMRA Layout)
+                pdf_buffer_a4 = generate_zimra_a4_pdf(
+                    {
+                        "receipt": full_payload['receipt'],
+                        "original_invoice_no": original_invoice_no,
+                    },
+                    ver_code, qr_code,
+                    zimra.device_id, state['fiscal_day_no'], 'InvoiceA4',
+                    seller_data, serial_number=serial_number
+                )
+                
                 move_to = os.path.join(folder_path, 'Processed')
                 os.makedirs(move_to, exist_ok=True)
-                pdf_filename = f"Receipt_{filename.replace('.txt', '.pdf')}"
+                
+                # Save 80mm PDF
+                pdf_filename = f"{safe_invoice_no}_80mm.pdf"
                 pdf_path = os.path.join(move_to, pdf_filename)
                 with open(pdf_path, 'wb') as f: 
                     f.write(pdf_buffer.getvalue())
+                    
+                # Save A4 PDF
+                pdf_filename_a4 = f"{safe_invoice_no}_A4.pdf"
+                pdf_path_a4 = os.path.join(move_to, pdf_filename_a4)
+                with open(pdf_path_a4, 'wb') as f: 
+                    f.write(pdf_buffer_a4.getvalue())
+
+                # Send the generated thermal receipt through the Windows spooler.
                 try:
-                    import time
-                    import win32api
-                    time.sleep(1.5)
-                    printer_name = getattr(Config, 'PRINTER_NAME', None)
-                    if printer_name:
-                        win32api.ShellExecute(0, "printto", pdf_path, f'"{printer_name}"', ".", 0)
-                        print(f"️ Sent {pdf_filename} to specific printer: {printer_name}")
-                    else:
-                        win32api.ShellExecute(0, "print", pdf_path, None, ".", 1)
-                        print(f"🖨️ Sent {pdf_filename} to default printer.")
+                    printer_name, job_id = send_pdf_to_printer(
+                        pdf_path,
+                        getattr(Config, 'PRINTER_NAME', ''),
+                        send_os_notification,
+                    )
+                    job_detail = f" (job {job_id})" if job_id is not None else ""
+                    print(f"🖨️ Submitted {pdf_filename} to {printer_name}{job_detail}.")
                 except Exception as print_err:
                     print(f"⚠️ Could not auto-print: {print_err}")
+                    send_os_notification("Receipt print failed", str(print_err))
+                
                 shutil.move(file_path, os.path.join(move_to, filename))
                 send_os_notification("✅ 80mm Receipt Generated", f"{filename}\nCode: {ver_code}")
-                log_to_db(f"[SUCCESS] {filename} | Code: {ver_code} | 80mm PDF Generated & Saved", "SUCCESS")
+                log_to_db(f"[SUCCESS] {filename} | Code: {ver_code} | 80mm PDF Generated & Saved", "SUCCESS")    
+                
+
                 
             return f"[SUCCESS] {filename} | Code: {ver_code}"
             
         else:
+            # ZIMRA Submission Failed
             error_msg = zimra_response if isinstance(zimra_response, str) else json.dumps(zimra_response, indent=2)
             print("\n" + "="*60)
             print("🔴 ZIMRA SUBMISSION FAILED - VALIDATION ERRORS:")
@@ -458,21 +509,17 @@ def process_single_file(file_path, folder_path):
                     for err in errors_list:
                         severity = str(err.get('severity', err.get('color', err.get('level', 'Red')))).upper()
                         message = err.get('message', err.get('description', str(err)))
-                        if 'RED' in severity or 'CRITICAL' in severity:
-                            print(f" [RED - CRITICAL] {message}")
-                        elif 'YELLOW' in severity or 'MINOR' in severity or 'WARNING' in severity:
-                            print(f"🟡 [YELLOW - MINOR] {message}")
-                        elif 'GREY' in severity or 'GRAY' in severity or 'TECHNICAL' in severity or 'INFO' in severity:
-                            print(f"⚪ [GREY - TECHNICAL] {message}")
-                        else:
-                            print(f"⚠️  [{severity}] {message}")
+                        if 'RED' in severity or 'CRITICAL' in severity: print(f"🔴 [RED - CRITICAL] {message}")
+                        elif 'YELLOW' in severity or 'MINOR' in severity or 'WARNING' in severity: print(f"🟡 [YELLOW - MINOR] {message}")
+                        elif 'GREY' in severity or 'GRAY' in severity or 'TECHNICAL' in severity or 'INFO' in severity: print(f"⚪ [GREY - TECHNICAL] {message}")
+                        else: print(f"⚠️  [{severity}] {message}")
                 else:
                     print("Raw ZIMRA Response:")
                     print(error_msg)
             else:
                 print(error_msg)
             print("="*60 + "\n")
-            send_os_notification(" ZIMRA Submission Failed", f"{filename}\nStatus {status_code}")
+            send_os_notification("❌ ZIMRA Submission Failed", f"{filename}\nStatus {status_code}")
             payload_str = json.dumps(full_payload, indent=2) if full_payload else "Payload not available"
             log_msg = f"[ZIMRA ERROR] {filename} -> Status {status_code}: {error_msg}\n\n--- GENERATED PAYLOAD ---\n{payload_str}\n-------------------------"
             log_to_db(log_msg, "FAILED")

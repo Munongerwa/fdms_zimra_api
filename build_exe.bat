@@ -1,4 +1,5 @@
 @echo off
+cd /d "%~dp0"
 REM ============================================
 REM FISCALINK Build Script
 REM ============================================
@@ -8,7 +9,15 @@ echo   FISCALINK EXE Builder
 echo ============================================
 echo.
 echo Installing required dependencies...
-pip install pyinstaller pystray plyer Pillow pdfplumber PyMuPDF reportlab qrcode cryptography requests flasgger dash dash-bootstrap-components plotly pywin32
+python -m pip install -r requirements.txt
+if errorlevel 1 (
+echo.
+echo ============================================
+echo   DEPENDENCY INSTALL FAILED!
+echo ============================================
+pause
+exit /b 1
+)
 echo.
 echo Cleaning previous build...
 if exist build rmdir /s /q build
@@ -18,7 +27,7 @@ echo.
 echo Building EXE (this may take 5-10 minutes)...
 echo.
 REM Build using the spec file
-pyinstaller build.spec --clean --noconfirm
+python -m PyInstaller build.spec --clean --noconfirm
 if errorlevel 1 (
 echo.
 echo ============================================
@@ -37,7 +46,7 @@ echo Your EXE file is located at:
 echo   dist\FISCALINK.exe
 echo.
 echo IMPORTANT POST-BUILD STEPS:
-echo   1. Copy your 'assets' folder into 'dist\FISCALINK\'
+echo   1. Copy your config.json next to dist\FISCALINK.exe
 echo   2. Ensure your certificates are in 'C:\certs\'
 echo      (client_cert.pem and client_key.key)
 echo   3. Double-click dist\FISCALINK.exe to run!

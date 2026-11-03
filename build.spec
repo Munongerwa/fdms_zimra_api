@@ -12,6 +12,7 @@ a = Analysis(
         ('core', 'core'),
         ('assets', 'assets'),
         ('data', 'data'),
+        ('templates', 'templates'),
     ],
     hiddenimports=[
         'app',
@@ -23,6 +24,8 @@ a = Analysis(
         'core.pdf_stamper',
         'core.zimra_validator',
         'core.license_manager',
+        'core.printer_manager',
+        'core.pos',
         
         # PDF & Image Dependencies
         'pdfplumber',
@@ -46,6 +49,7 @@ a = Analysis(
         'PIL',
         'PIL.Image',
         'PIL.ImageDraw',
+        'PIL.ImageWin',
         
         # Crypto & API Dependencies
         'cryptography',
@@ -79,6 +83,9 @@ a = Analysis(
         'win32print',
         'win32con',
         'win32gui',
+        'win32ui',
+        'pywintypes',
+        'pythoncom',
         
         # Standard libraries
         'hmac',

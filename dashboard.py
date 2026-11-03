@@ -1460,9 +1460,21 @@ def download_success_csv(n):
     return dash.no_update
 
 def get_pos_page():
-    return page_layout("Point of sale", "A streamlined checkout experience for your fiscal device.", "bi-shop", [
-        dbc.Card([dbc.CardBody([html.Div([html.I(className="bi bi-basket2", style={"fontSize": "48px", "color": "#40e0a0", "marginBottom": "18px"}), html.H4("POS module coming soon", className="text-center", style={"color": "#edf2f7"}), html.P("This module will integrate directly with your barcode scanner and cart system.", className="text-center text-muted", style={"maxWidth": "480px", "margin": "0 auto"})], style={"textAlign": "center", "padding": "48px 24px"})])], className="dashboard-card", style={"borderRadius": "16px"})
-    ])
+    return html.Div(
+        html.Iframe(
+            src=f"{API_BASE}/api/pos/ui",
+            title="Point of sale",
+            style={
+                "width": "100%",
+                "height": "calc(100vh - 105px)",
+                "minHeight": "720px",
+                "border": "0",
+                "borderRadius": "14px",
+                "backgroundColor": "#0e1118",
+            },
+        ),
+        style={"margin": "-20px", "minHeight": "calc(100vh - 60px)"},
+    )
 
 @callback(Output("download-zreport", "data"), Input({'type': 'btn-dl-zreport', 'index': dash.ALL}, "n_clicks"), prevent_initial_call=True)
 def download_z_report(n_clicks_list):

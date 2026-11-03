@@ -61,7 +61,7 @@ class Config:
     ZIMRA_API_URL = ext_config["zimra_api_url"]
     QR_BASE_URL = ext_config["qr_base_url"]
     
-    # Printer Settings (Used by app.py for 'printto' command)
+    # Windows printer queue name; can be a local, shared, or network queue.
     PRINTER_NAME = ext_config.get("printer_name", "")
     
     # POS Webhook Security (Used by app.py to authenticate external POS systems)

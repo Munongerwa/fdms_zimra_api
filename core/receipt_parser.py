@@ -36,6 +36,7 @@ def aggregate_taxes(items, vat_exclusive=False):
             sales_with_tax = item['total']
         tax_totals[key]['salesAmountWithTax'] += sales_with_tax
         tax_totals[key]['taxAmount'] += tax_amt
+        
     taxes = []
     for (tax_code, tax_id, tax_pct), totals in tax_totals.items():
         taxes.append({
@@ -45,16 +46,182 @@ def aggregate_taxes(items, vat_exclusive=False):
         })
     return taxes
 
+# ============================================================
+# QUICKBOOKS TXT PARSER (Updated to extract exact Tax Amount)
+# ============================================================
+def parse_quickbooks_receipt(lines):
+    """Parses QuickBooks POS receipts (Tax Exclusive input, converts to Tax Inclusive)."""
+    machine_datetime = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    data = {
+        'seller_vat': '', 'seller_tin': '', 'buyer_name': '', 'buyer_address': '', 'buyer_vat': '',
+        'buyer_tin': '', 'buyer_phone': '', 'buyer_email': '', 'invoice_no': '', 'date': machine_datetime,
+        'currency': 'USD', 'cashier': '', 'total_ex': '0.00', 'invoice_total': '0.00',
+        'items': [], 'taxes': [], 'vat_exclusive': False, 'original_invoice_no': '', 'receipt_type': 'FiscalInvoice'
+    }
+    
+    # Join lines to search for totals easily
+    full_text = "\n".join(lines)
+    
+    for line in lines:
+        ls = line.strip()
+        if not ls: continue
+        
+        # Header Parsing
+        if "Invoice #" in ls or "INVOICE No." in ls:
+            parts = ls.split()
+            for i, p in enumerate(parts):
+                if p.endswith('#') or p == 'No.':
+                    if i+1 < len(parts):
+                        data['invoice_no'] = re.sub(r'[^a-zA-Z0-9]', '', parts[i+1])
+                        break
+        elif "VAT Reg. No." in ls or "VAT Number" in ls:
+            match = re.search(r'(?:VAT Reg\. No\.|VAT Number)\s*[:#]?\s*(\d+)', ls)
+            if match: data['seller_vat'] = match.group(1)
+        elif ls.startswith("TIN.") or "TIN Number" in ls:
+            match = re.search(r'(?:TIN\.|TIN Number)\s*[:#]?\s*(\d+)', ls)
+            if match: data['seller_tin'] = match.group(1)
+        elif "Customer Name" in ls:
+            match = re.search(r'Customer Name\s*[:#]?\s*(.+)', ls)
+            if match: data['buyer_name'] = match.group(1).strip()
+        elif "Customer Address" in ls:
+            match = re.search(r'Customer Address\s*[:#]?\s*(.+)', ls)
+            if match: data['buyer_address'] = match.group(1).strip()
+        elif "Customer TIN" in ls:
+            match = re.search(r'Customer TIN\s*[:#]?\s*(\d+)', ls)
+            if match: 
+                val = match.group(1)
+                data['buyer_tin'] = val if val and val != '0' else '1234567890'
+        elif "Customer VAT" in ls:
+            match = re.search(r'Customer VAT\s*[:#]?\s*(\d+)', ls)
+            if match:
+                val = match.group(1)
+                data['buyer_vat'] = val if val and val != '0' else '123456789'
+        elif "Customer Phone" in ls or "PHONE NUMBER" in ls:
+            match = re.search(r'(?:Customer Phone|PHONE NUMBER)\s*[:#]?\s*([\d\s\+\-]+)', ls)
+            if match: data['buyer_phone'] = match.group(1).strip()
+        elif "Customer E-mail" in ls or "EMAIL" in ls:
+            match = re.search(r'(?:Customer E-mail|EMAIL)\s*[:#]?\s*(\S+@\S+)', ls)
+            if match: data['buyer_email'] = match.group(1).strip()
+        elif ls.startswith("CURRENCY"):
+            data['currency'] = ls.split()[-1].strip()
+        elif ls.startswith("SALES PERSON"):
+            parts = ls.split("SALES PERSON")
+            if len(parts) > 1: data['cashier'] = parts[1].strip()
+        elif ls.startswith("ORIGINAL"):
+            parts = ls.split("ORIGINAL")
+            if len(parts) > 1: data['original_invoice_no'] = parts[1].strip()
+        elif ls.startswith("Subtotal"):
+            parts = ls.split()
+            if parts: data['total_ex'] = re.sub(r'[^\d.]', '', parts[-1])
+        elif ls.startswith("Total") and "Amount" not in ls:
+            parts = ls.split()
+            if parts: data['invoice_total'] = re.sub(r'[^\d.]', '', parts[-1])
+
+    if data['invoice_no'].upper().startswith('CRN'):
+        data['receipt_type'] = 'CreditNote'
+
+    # ============================================================
+    # FIX: Extract exact Sales Tax amount from text to avoid rounding errors
+    # Example: "Sales Tax (15.5%)        USD 0.74"
+    # ============================================================
+    extracted_tax_total = None
+    tax_match = re.search(r'Sales\s+Tax\s+\(15\.5%\)\s+USD\s+([\d,]+(?:\.\d+)?)', full_text, re.IGNORECASE)
+    if tax_match:
+        extracted_tax_total = float(tax_match.group(1).replace(',', ''))
+        print(f"[QuickBooks] Extracted Sales Tax from text: {extracted_tax_total}")
+
+    # ============================================================
+    # ITEM PARSING LOGIC
+    # Regex: [Description] [8-digit HS Code] [Qty] [Unit Price] [Total Amount][Optional 'T']
+    # ============================================================
+    item_pattern = re.compile(r'^(.*?)\s+(\d{8})\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)(T?)\s*$')
+    
+    for line in lines:
+        ls = line.strip()
+        match = item_pattern.match(ls)
+        if match:
+            desc = match.group(1).strip()
+            hs_code = match.group(2)
+            qty = float(match.group(3))
+            unit_price_excl = float(match.group(4))
+            total_excl_val = float(match.group(5))
+            has_t = match.group(6).upper() == 'T'
+            
+            # Clean description
+            desc = re.sub(r'[!@#$%^&*()\-+~<>/\[\]{}|`]', ' ', desc).strip()
+            
+            if has_t:
+                # 15.5% VAT Item
+                tax_pct = 15.5
+                tax_code = "A"
+                tax_id = Config.TAX_ID
+                
+                # Calculate Tax Inclusive Price (Price + 15.5%)
+                unit_price_incl = round(unit_price_excl * 1.155, 2)
+                
+                # Calculate Tax Inclusive Total (New Price * Qty)
+                total_incl = round(unit_price_incl * qty, 2)
+            else:
+                # 0% VAT Item
+                tax_pct = 0.0
+                tax_code = "B"
+                tax_id = 2
+                
+                unit_price_incl = unit_price_excl
+                total_incl = total_excl_val
+                
+            data['items'].append({
+                'code': hs_code,
+                'name': desc,
+                'qty': qty,
+                'price': unit_price_incl,
+                'total': total_incl,
+                'tax_pct': tax_pct,
+                'tax_code': tax_code,
+                'tax_id': tax_id
+            })
+            
+    # Aggregate taxes
+    tax_totals = {}
+    for item in data['items']:
+        key = (item['tax_code'], item['tax_id'], item['tax_pct'])
+        if key not in tax_totals:
+            tax_totals[key] = {'salesAmountWithTax': 0.0, 'taxAmount': 0.0}
+        if item['tax_pct'] > 0:
+            # Standard calculation
+            tax_amt = round(item['total'] - (item['total'] / 1.155), 2)
+        else:
+            tax_amt = 0.0
+        tax_totals[key]['salesAmountWithTax'] += item['total']
+        tax_totals[key]['taxAmount'] += tax_amt
+        
+    # Override calculated tax with extracted Tax Total if available
+    if extracted_tax_total is not None:
+        for key in tax_totals:
+            if key[2] > 0: # If tax percent > 0
+                tax_totals[key]['taxAmount'] = extracted_tax_total
+                break
+                
+    data['taxes'] = []
+    for (tax_code, tax_id, tax_pct), totals in tax_totals.items():
+        data['taxes'].append({
+            'tax_code': tax_code, 'tax_id': tax_id, 'tax_percent': tax_pct,
+            'tax_amount': round(totals['taxAmount'], 2),
+            'sales_amount_with_tax': round(totals['salesAmountWithTax'], 2)
+        })
+        
+    return data
+
 def parse_aibes_receipt(file_path):
     """Robustly parses AIBES invoice/credit note PDFs."""
     import pdfplumber
     data = {
         'seller_vat': '', 'seller_tin': '', 'seller_phone': '', 'seller_email': '', 'seller_address': '',
-        'buyer_name': '', 'buyer_address': '', 'buyer_vat': '',
+        'buyer_name': '', 'buyer_address': '', 'buyer_vat': '', 
         'buyer_tin': '', 'buyer_phone': '', 'buyer_email': '',
-        'invoice_no': '',
+        'invoice_no': '', 
         'original_invoice_no': '',
-        'receipt_type': 'FiscalInvoice',
+        'receipt_type': 'FiscalInvoice', 
         'date': datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
         'currency': 'USD', 'items': [], 'taxes': [], 'vat_exclusive': False
     }
@@ -65,14 +232,19 @@ def parse_aibes_receipt(file_path):
             for page in pdf.pages:
                 full_text += (page.extract_text() or "") + "\n"
                 all_tables.extend(page.extract_tables() or [])
+            
             full_text = re.sub(r'\n+', '\n', full_text)
+            
             if "FISCAL CREDIT NOTE" in full_text.upper():
                 data['receipt_type'] = "CreditNote"
+                
             match = re.search(r'Document No[:\s]*([A-Z0-9]+)', full_text, re.IGNORECASE)
             if match: data['invoice_no'] = match.group(1)
+            
             ref_match = re.search(r'Reference\s+No\.[:\s].*?([A-Z0-9\-]{10,})', full_text, re.IGNORECASE | re.DOTALL)
             if ref_match: 
                 data['original_invoice_no'] = ref_match.group(1).strip()
+                
             currency_match = re.search(r'Currency[:\s]*(USD|ZWG)', full_text, re.IGNORECASE)
             if not currency_match:
                 currency_match = re.search(r'Invoice Total\s+(USD|ZWG)', full_text, re.IGNORECASE)
@@ -80,26 +252,33 @@ def parse_aibes_receipt(file_path):
                 currency_match = re.search(r'(USD|ZWG)\s*\n?\s*Document No', full_text, re.IGNORECASE)
             if currency_match: 
                 data['currency'] = currency_match.group(1).upper()
+                
             match = re.search(r'VAT Number[:\s]*(\d+)', full_text, re.IGNORECASE)
             if match: data['seller_vat'] = match.group(1)
             match = re.search(r'TIN Number[:\s]*(\d+)', full_text, re.IGNORECASE)
             if match: data['seller_tin'] = match.group(1)
+            
             name_match = re.search(r'Customer Name[:\s]+(.*?)(?=\s*Customer Address|\s*Customer VAT|\s*Customer TIN|\s*Customer Email|\s*Customer Telephone|\s*Property|\s*Document No:|$)', full_text, re.IGNORECASE | re.DOTALL)
             if name_match: data['buyer_name'] = name_match.group(1).strip()
+            
             addr_match = re.search(r'Customer Address[:\s]+(.*?)(?=\s*Customer VAT|\s*Customer TIN|\s*Customer Email|\s*Customer Telephone|\s*Property|\s*Document No:|$)', full_text, re.IGNORECASE | re.DOTALL)
             if addr_match: 
                 addr = addr_match.group(1).strip()
                 addr = re.sub(r'\s*Document No:.*', '', addr, flags=re.IGNORECASE | re.DOTALL)
                 addr = re.sub(r',\s*,', ',', addr)
                 data['buyer_address'] = addr.replace('\n', ' ').strip()
+            
             vat_match = re.search(r'Customer VAT No[:\s]+(\d{9})', full_text, re.IGNORECASE)
             if vat_match: data['buyer_vat'] = vat_match.group(1)
             else: data['buyer_vat'] = '123456789'
+                
             tin_match = re.search(r'Customer TIN No[:\s]+(\d{10})', full_text, re.IGNORECASE)
             if tin_match: data['buyer_tin'] = tin_match.group(1)
             else: data['buyer_tin'] = '1234567890'
+                
             email_match = re.search(r'Customer Email[:\s]+(\S+@\S+)', full_text, re.IGNORECASE)
             if email_match: data['buyer_email'] = email_match.group(1).strip()
+            
             phone_match = re.search(r'Customer Telephone[:\s]+([\d\s\+\-]{7,20})', full_text, re.IGNORECASE)
             if phone_match: data['buyer_phone'] = phone_match.group(1).strip()
             
@@ -110,12 +289,15 @@ def parse_aibes_receipt(file_path):
                     if row and any('HS Code' in str(c) for c in row if c):
                         header_idx = i
                         break
+                        
                 if header_idx != -1:
                     for row in table[header_idx+1:]:
                         if not row: continue
                         clean_row = [str(c).strip() for c in row if c is not None and str(c).strip() != '']
+                        
                         if any('Sub Total' in str(c) or 'VAT Total' in str(c) or 'Invoice Total' in str(c) for c in clean_row):
                             continue
+                        
                         hs_code = ""
                         hs_idx = -1
                         for i, val in enumerate(clean_row):
@@ -123,14 +305,18 @@ def parse_aibes_receipt(file_path):
                                 hs_code = val.replace(' ', '')
                                 hs_idx = i
                                 break
+                        
                         if not hs_code: continue
+                        
                         row_text = " ".join(clean_row[hs_idx+1:])
                         row_text = re.sub(r'\s+', ' ', row_text).strip()
+                        
                         qty = 0
                         price = 0
                         total_incl = 0
                         tax_pct = 0.0
                         desc = row_text
+                        
                         m5 = re.search(r'^(.*?)\s+([\d,]+(?:\.\d+)?)\s+([\d,]+\.\d+)\s+([\d,]+\.\d+)\s+([\d,]+\.\d+)\s+([\d,]+\.\d+)$', row_text)
                         if m5:
                             desc = m5.group(1).strip()
@@ -170,6 +356,7 @@ def parse_aibes_receipt(file_path):
                                     price = total_incl / qty if qty > 0 else 0
                                     vat_amt = total_incl - (total_incl / 1.155)
                                     tax_pct = 15.5 if vat_amt > 0.01 else 0.0
+                                    
                         if qty > 0 and total_incl > 0:
                             tax_code = "A" if tax_pct > 0 else "B"
                             tax_id = Config.TAX_ID if tax_pct > 0 else 2
@@ -184,37 +371,43 @@ def parse_aibes_receipt(file_path):
                                 'tax_code': tax_code, 
                                 'tax_id': tax_id
                             })
-            extracted_vat_total = None
-            vat_total_match = re.search(r'VAT\s+T\s*o\s*t\s*a\s*l\s+([\d,]+(?:\.\d+)?)', full_text, re.IGNORECASE)
-            if vat_total_match:
-                extracted_vat_total = float(vat_total_match.group(1).replace(',', ''))
-            tax_totals = {}
-            for item in data['items']:
-                key = (item['tax_code'], item['tax_id'], item['tax_pct'])
-                if key not in tax_totals:
-                    tax_totals[key] = {'salesAmountWithTax': 0.0, 'taxAmount': 0.0}
-                if item['tax_pct'] > 0:
-                    tax_amt = round(item['total'] - (item['total'] / 1.155), 2)
-                else:
-                    tax_amt = 0.0
-                tax_totals[key]['salesAmountWithTax'] += item['total']
-                tax_totals[key]['taxAmount'] += tax_amt
-            if extracted_vat_total is not None:
-                for key in tax_totals:
-                    if key[2] > 0:
-                        tax_totals[key]['taxAmount'] = extracted_vat_total
-                        break
-            data['taxes'] = []
-            for (tax_code, tax_id, tax_pct), totals in tax_totals.items():
-                data['taxes'].append({
-                    'tax_code': tax_code, 'tax_id': tax_id, 'tax_percent': tax_pct,
-                    'tax_amount': round(totals['taxAmount'], 2),
-                    'sales_amount_with_tax': round(totals['salesAmountWithTax'], 2)
-                })
+                                
+        extracted_vat_total = None
+        vat_total_match = re.search(r'VAT\s+T\s*o\s*t\s*a\s*l\s+([\d,]+(?:\.\d+)?)', full_text, re.IGNORECASE)
+        if vat_total_match:
+            extracted_vat_total = float(vat_total_match.group(1).replace(',', ''))
+            
+        tax_totals = {}
+        for item in data['items']:
+            key = (item['tax_code'], item['tax_id'], item['tax_pct'])
+            if key not in tax_totals:
+                tax_totals[key] = {'salesAmountWithTax': 0.0, 'taxAmount': 0.0}
+            if item['tax_pct'] > 0:
+                tax_amt = round(item['total'] - (item['total'] / 1.155), 2)
+            else:
+                tax_amt = 0.0
+            tax_totals[key]['salesAmountWithTax'] += item['total']
+            tax_totals[key]['taxAmount'] += tax_amt
+            
+        if extracted_vat_total is not None:
+            for key in tax_totals:
+                if key[2] > 0:
+                    tax_totals[key]['taxAmount'] = extracted_vat_total
+                    break
+                    
+        data['taxes'] = []
+        for (tax_code, tax_id, tax_pct), totals in tax_totals.items():
+            data['taxes'].append({
+                'tax_code': tax_code, 'tax_id': tax_id, 'tax_percent': tax_pct,
+                'tax_amount': round(totals['taxAmount'], 2),
+                'sales_amount_with_tax': round(totals['salesAmountWithTax'], 2)
+            })
+            
     except Exception as e:
         print(f"[AIBES] Error parsing PDF: {e}")
         import traceback
         traceback.print_exc()
+        
     print(f"\n[AIBES] Type: {data['receipt_type']}")
     print(f"[AIBES] Invoice: {data['invoice_no']}, Original Ref: {data['original_invoice_no']}")
     print(f"[AIBES] Buyer Name: '{data['buyer_name']}'")
@@ -222,14 +415,13 @@ def parse_aibes_receipt(file_path):
     return data
 
 def parse_aibes_incl_receipt(file_path):
-    """Robustly parses AIBES invoice/credit note PDFs (Inclusive layout)."""
     return parse_aibes_receipt(file_path)
 
 def parse_pdf_receipt(file_path):
     """Fallback generic PDF parser."""
     data = {
-        'seller_vat': '', 'seller_tin': '', 'buyer_name': '', 'buyer_address': '', 'buyer_vat': '',
-        'buyer_tin': '', 'buyer_phone': '', 'buyer_email': '', 'invoice_no': '',
+        'seller_vat': '', 'seller_tin': '', 'buyer_name': '', 'buyer_address': '', 'buyer_vat': '', 
+        'buyer_tin': '', 'buyer_phone': '', 'buyer_email': '', 'invoice_no': '', 
         'date': datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
         'currency': 'USD', 'items': [], 'taxes': [], 'vat_exclusive': False
     }
@@ -445,10 +637,12 @@ def parse_feedmix_receipt(lines):
     return data
 
 def parse_receipt_file(file_path, template="melivo"):
+    """Parse a receipt file using the specified template."""
     template_lower = template.lower()
     if template_lower == "feedmix": return parse_feedmix_receipt(read_file_smart(file_path))
     elif template_lower == "aibes": return parse_aibes_receipt(file_path)
     elif template_lower == "aibes_incl": return parse_aibes_incl_receipt(file_path)
+    elif template_lower == "quickbooks": return parse_quickbooks_receipt(read_file_smart(file_path))
     elif template_lower == "pdf": return parse_pdf_receipt(file_path)
     else: return parse_melivo_receipt(read_file_smart(file_path))
 
@@ -572,7 +766,7 @@ def build_zimra_payload(parsed_data, device_id=None, receipt_counter=1, receipt_
                     if row['created_at']:
                         orig_date = row['created_at'].replace(' ', 'T') 
         except Exception as e:
-            print(f"️ Warning: Could not lookup original invoice {original_invoice_no} in DB: {e}")
+            print(f"⚠️ Warning: Could not lookup original invoice {original_invoice_no} in DB: {e}")
         payload['creditDebitNote'] = {
             "deviceID": int(device_id) if device_id else 0,
             "receiptGlobalNo": int(orig_global_no),

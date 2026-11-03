@@ -1,0 +1,778 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AIBES POS</title>
+  <style>
+    :root { color-scheme: dark; font-family: Segoe UI, sans-serif; background:#0e1118; color:#e7edf5; }
+    * { box-sizing:border-box; }
+    body { margin:0; }
+    button,input,select { font:inherit; }
+    button { cursor:pointer; }
+    .wrap { max-width:1500px; margin:auto; padding:22px; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:18px; }
+    h1 { margin:0; font-size:23px; } h2 { font-size:18px; margin:0 0 15px; }
+    .muted { color:#9ca8b8; font-size:13px; } .small { font-size:12px; }
+    .card { background:#171d28; border:1px solid #293242; border-radius:14px; padding:17px; }
+    .grid { display:grid; gap:14px; } .sale-grid { grid-template-columns:minmax(300px,.85fr) minmax(420px,1.25fr); align-items:start; }
+    .form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:11px; }
+    label { display:block; font-size:12px; color:#b5c1d0; margin-bottom:5px; }
+    input,select { width:100%; min-height:40px; border-radius:8px; border:1px solid #354153; padding:8px 10px; color:#e7edf5; background:#10151e; }
+    input[type=checkbox] { width:auto; min-height:0; accent-color:#40e0d0; }
+    .btn { border:0; border-radius:8px; padding:10px 13px; background:#40e0d0; color:#061513; font-weight:700; }
+    .btn.secondary { background:#283446; color:#e7edf5; } .btn.danger { background:#7e3540; color:white; }
+    .btn.smallbtn { padding:7px 9px; font-size:12px; } .btn:disabled { opacity:.5; cursor:wait; }
+    .toolbar { display:flex; gap:9px; align-items:center; flex-wrap:wrap; }
+    .tabs { display:flex; gap:7px; flex-wrap:wrap; margin:14px 0; }
+    .tabs button { background:#171d28; border:1px solid #293242; color:#c8d1dd; border-radius:9px; padding:9px 13px; }
+    .tabs button.active { border-color:#40e0d0; color:#40e0d0; }
+    .product-search-wrap { position:relative; margin-bottom:16px; }
+    .product-dropdown { position:absolute; z-index:5; top:100%; left:0; right:0; max-height:300px; overflow:auto; background:#10151e; border:1px solid #354153; border-radius:8px; box-shadow:0 12px 30px #0008; }
+    .product-option { display:flex; justify-content:space-between; gap:12px; width:100%; padding:11px 12px; border:0; border-bottom:1px solid #293242; text-align:left; color:#e7edf5; background:transparent; }
+    .product-option:hover,.product-option:focus { background:#202b39; outline:none; }
+    .cart-table { min-width:540px; }
+    .cart-table input { min-height:32px; padding:4px 6px; width:74px; }
+    .totals { display:grid; grid-template-columns:1fr auto; gap:8px; margin:13px 0; }
+    .change-panel { margin-top:12px; padding:12px; background:#10151e; border-radius:9px; }
+    .sale-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+    .sale-details { padding:13px; }
+    .sale-details h2 { margin-bottom:9px; }
+    .sale-detail-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px 10px; }
+    .sale-details label { margin-bottom:3px; }
+    .sale-details input,.sale-details select { min-height:35px; padding:6px 9px; }
+    .sale-details .change-panel { margin-top:8px; padding:8px 10px; }
+    .sale-summary { display:grid; grid-template-columns:1fr 1fr 1.15fr; gap:7px; margin-top:8px; }
+    .sale-summary > div { min-width:0; padding:7px 8px; border-radius:8px; background:#10151e; }
+    .sale-summary span { display:block; color:#9ca8b8; font-size:11px; }
+    .sale-summary strong { display:block; margin-top:3px; font-size:14px; white-space:nowrap; }
+    .sale-summary .sale-summary-total { color:#40e0d0; font-size:17px; }
+    .sale-details .sale-actions { flex-wrap:nowrap; gap:6px; margin-top:9px; }
+    .sale-details .sale-actions .btn { flex:1; min-width:0; white-space:nowrap; padding:7px 6px; font-size:11px; }
+    .sale-details .sale-actions #complete-sale { flex:1.35; }
+    .sale-details .toolbar { gap:6px; }
+    .total { font-size:19px; font-weight:700; color:#40e0d0; } .notice { margin:12px 0; padding:11px 13px; border-radius:9px; background:#18333a; color:#8ee9dc; white-space:pre-wrap; }
+    .notice.error { background:#44252a; color:#ffb6b6; } .hidden { display:none!important; }
+    .table-wrap { overflow:auto; } table { width:100%; border-collapse:collapse; font-size:13px; }
+    th,td { text-align:left; padding:9px 8px; border-bottom:1px solid #293242; white-space:nowrap; }
+    th { color:#9ca8b8; font-size:11px; text-transform:uppercase; }
+    .badge { display:inline-block; padding:4px 7px; border-radius:999px; background:#303949; font-size:11px; }
+    .badge.fiscalized { color:#8cf0ad; background:#183929; }.badge.failed { color:#ffb0a7; background:#492b2b; }
+    .badge.pending { color:#ffd27f; background:#453922; }
+    .stat-row { display:flex; gap:9px; flex-wrap:wrap; margin-bottom:13px; }
+    .stat { min-width:140px; flex:1; background:#10151e; border-radius:9px; padding:11px; }
+    .stat b { display:block; font-size:18px; margin-top:5px; }
+    .cashbook-table { min-width:1120px; }
+    .cashbook-table th,.cashbook-table td { white-space:normal; vertical-align:top; }
+    .cashbook-table .side-heading { text-align:center; font-size:13px; padding:11px; }
+    .cashbook-table .debit-heading { color:#8cf0ad; background:#183929; }
+    .cashbook-table .credit-heading { color:#ffb0a7; background:#492b2b; }
+    .cashbook-table .amount-cell { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+    .cashbook-table .side-total td { font-weight:700; border-top:2px solid #536174; }
+    .cashbook-table .side-total .debit-total { color:#8cf0ad; }
+    .cashbook-table .side-total .credit-total { color:#ffb0a7; }
+    .cashbook-table .side-grand-total td { background:#202b39; font-weight:700; border-top:1px solid #536174; }
+    .cash-particulars { min-width:190px; }
+    .audit-table { min-width:900px; }
+    .audit-table td { white-space:normal; }
+    .audit-status { display:inline-block; min-width:42px; text-align:center; padding:3px 6px; border-radius:6px; background:#303949; }
+    .audit-status.ok { color:#8cf0ad; background:#183929; }
+    .audit-status.failed { color:#ffb0a7; background:#492b2b; }
+    #login { max-width:440px; margin:7vh auto; } #login .form-grid { grid-template-columns:1fr; }
+    @media(max-width:850px) { .sale-grid { grid-template-columns:1fr; } }
+    @media(max-width:600px) {
+      .wrap { padding:13px; } header { align-items:flex-start; } .cart-table { min-width:500px; }
+      .sale-detail-grid { grid-template-columns:1fr; }
+      .sale-details .sale-actions { flex-wrap:wrap; }
+      .sale-details .sale-actions .btn { flex:1 1 42%; white-space:normal; }
+    }
+    @media(max-height:820px) and (min-width:851px) {
+      .wrap { padding-top:10px; padding-bottom:10px; }
+      header { margin-bottom:8px; }
+      .tabs { margin:8px 0; }
+      #notice:empty { display:none; }
+      .sale-details .muted.small { display:none; }
+      .sale-details .sale-actions .btn { padding-top:6px; padding-bottom:6px; }
+    }
+  </style>
+</head>
+<body>
+<main class="wrap">
+  <section id="login" class="card">
+    <h1>AIBES Point of Sale</h1>
+    <p class="muted">Secure cashier sign-in for sales, inventory and cash management.</p>
+    <div id="auth-notice"></div>
+    <div id="auth-form"></div>
+  </section>
+  <section id="app" class="hidden">
+    <header>
+      <div><h1>Point of Sale</h1><div id="cashier-label" class="muted"></div></div>
+      <div class="toolbar"><span id="base-currency" class="badge"></span><button id="logout" class="btn secondary">Sign out</button></div>
+    </header>
+    <div id="notice"></div>
+    <nav id="tabs" class="tabs"></nav>
+    <section id="screen"></section>
+  </section>
+</main>
+<script>
+(() => {
+  const api = "/api/pos";
+  let token = localStorage.getItem("aibes_pos_token") || "";
+  let cashier = null, catalog = {products:[], currencies:[], base_currency:"USD"};
+  let cart = new Map(), activeTab = "sale", settings = null, editingProduct = null, editingCustomer = null;
+  let saleDraft = {currency:"",customer_id:"",invoice_format:"InvoiceA4",payment_type:"Cash",amount_received:"",fiscalize:false};
+  let currentHeldSaleId = null;
+  let auditLogEntries = [], auditLogBeforeId = null, auditLogHasMore = false;
+  const $ = id => document.getElementById(id);
+  const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const money = (value, currency) => `${currency} ${Number(value || 0).toFixed(2)}`;
+  const showNotice = (message, error=false) => { $("notice").innerHTML = message ? `<div class="notice ${error?"error":""}">${esc(message)}</div>` : ""; };
+  async function call(path, options={}) {
+    const headers = {"Content-Type":"application/json", ...(token ? {"X-POS-Session":token} : {}), ...(options.headers || {})};
+    const response = await fetch(api + path, {...options, headers});
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || data.message || `Request failed (${response.status})`);
+    return data;
+  }
+  function authForm(setup) {
+    $("login").classList.remove("hidden"); $("app").classList.add("hidden");
+    $("auth-form").innerHTML = setup
+      ? `<h2>Set up your POS manager</h2><div class="form-grid">
+          <div><label>Manager name</label><input id="auth-name" autocomplete="name"></div>
+          <div><label>Username</label><input id="auth-user" autocomplete="username"></div>
+          <div><label>PIN (4–12 digits)</label><input id="auth-pin" inputmode="numeric" type="password" autocomplete="new-password"></div>
+          <button id="auth-submit" class="btn">Create manager account</button></div>`
+      : `<h2>Cashier sign-in</h2><div class="form-grid">
+          <div><label>Username</label><input id="auth-user" autocomplete="username"></div>
+          <div><label>PIN</label><input id="auth-pin" inputmode="numeric" type="password" autocomplete="current-password"></div>
+          <button id="auth-submit" class="btn">Sign in</button></div>`;
+    $("auth-notice").innerHTML = "";
+    $("auth-submit").onclick = async () => {
+      try {
+        const values = {username:$("auth-user").value, pin:$("auth-pin").value};
+        const result = setup
+          ? await call("/setup", {method:"POST", body:JSON.stringify({...values, display_name:$("auth-name").value})})
+          : await call("/login", {method:"POST", body:JSON.stringify(values)});
+        token = result.token; cashier = result.cashier;
+        localStorage.setItem("aibes_pos_token", token);
+        await start();
+      } catch (error) { $("auth-notice").innerHTML = `<div class="notice error">${esc(error.message)}</div>`; }
+    };
+  }
+  async function bootstrap() {
+    const data = await call("/bootstrap");
+    authForm(data.setup_required);
+  }
+  async function start() {
+    try {
+      catalog = await call("/catalog");
+      cashier = catalog.cashier;
+      $("login").classList.add("hidden"); $("app").classList.remove("hidden");
+      $("cashier-label").textContent = `${cashier.display_name} · ${cashier.role}`;
+      $("base-currency").textContent = `Base currency: ${catalog.base_currency}`;
+      renderTabs(); await render();
+    } catch (error) {
+      token = ""; localStorage.removeItem("aibes_pos_token"); bootstrap().catch(showFatal);
+    }
+  }
+  function showFatal(error) { $("auth-notice").innerHTML = `<div class="notice error">${esc(error.message)}</div>`; }
+  function renderTabs() {
+    const tabs = [["sale","Checkout"],["invoices","Invoice history"],["customers","Customers"],
+      ["analysis","Sales analysis"],["cashbook","Cash book"],["products","Products & stock"]];
+    if (cashier.role === "manager") tabs.push(["cashiers","Cashiers"],["settings","Settings"],["audit","Audit log"]);
+    $("tabs").innerHTML = tabs.map(([id,label]) => `<button data-tab="${id}" class="${activeTab===id?"active":""}">${label}</button>`).join("");
+    $("tabs").querySelectorAll("[data-tab]").forEach(button => button.onclick = async () => {
+      activeTab = button.dataset.tab; renderTabs(); await render();
+    });
+  }
+  const currencyOptions = (selected="USD") => catalog.currencies.map(c => `<option value="${esc(c.code)}" ${c.code===selected?"selected":""}>${esc(c.code)} · ${esc(c.name)}</option>`).join("");
+  const currencyRate = code => Number(catalog.currencies.find(c=>c.code===code)?.rate_to_base || 1);
+  const priceInCurrency = (product, code) => Number(product.price) / currencyRate(code);
+  const cartTotal = () => [...cart.values()].reduce((sum,{product,quantity}) =>
+    sum + Math.round(priceInCurrency(product,$("sale-currency")?.value || saleDraft.currency || catalog.base_currency)*quantity*100)/100, 0);
+  function rememberSaleOptions() {
+    if (!$("sale-currency")) return;
+    saleDraft = {
+      currency:$("sale-currency").value,
+      customer_id:$("sale-customer").value,
+      invoice_format:$("invoice-format").value,
+      payment_type:$("payment-type").value,
+      amount_received:$("amount-received").value,
+      fiscalize:$("fiscalize-now").checked
+    };
+  }
+  function updateChange() {
+    const total = cartTotal();
+    const currency = $("sale-currency")?.value || catalog.base_currency;
+    const received = Number($("amount-received")?.value || 0);
+    if ($("amount-received")) $("change-amount").textContent=money(Math.max(0,received-total),currency);
+    if ($("received-hint")) $("received-hint").textContent=received<total
+      ? `Amount due: ${money(total-received,currency)}` : "Change due";
+  }
+  async function renderSale() {
+    const currency = saleDraft.currency || $("sale-currency")?.value || catalog.base_currency;
+    const products = catalog.products;
+    const customers = await call("/customers");
+    $("screen").innerHTML = `<div class="sale-grid grid">
+      <div class="card sale-details"><h2>Sale details</h2>
+      <div class="form-grid sale-detail-grid">
+      <div><label>Customer (optional)</label><select id="sale-customer"><option value="">Walk-in customer</option>
+        ${customers.map(c=>`<option value="${c.id}">${esc(c.name)}${c.tin?` · TIN ${esc(c.tin)}`:""}</option>`).join("")}</select></div>
+      <div><label>Sale currency</label><select id="sale-currency">${currencyOptions(currency)}</select></div>
+      <div><label>Invoice format</label><select id="invoice-format"><option value="InvoiceA4">A4 invoice</option><option value="Receipt48">80mm thermal receipt</option></select></div>
+      <div><label>Payment method</label><select id="payment-type"><option value="Cash">Cash</option><option value="Card">Card</option><option value="MobileWallet">Mobile wallet</option><option value="BankTransfer">Bank transfer</option><option value="Other">Other</option></select></div>
+      </div>
+      <div id="cash-details" class="change-panel"><div class="form-grid">
+        <div><label>Amount received (${esc(currency)})</label><input id="amount-received" type="number" min="0" step="0.01" placeholder="Enter cash received"></div>
+        <div><label>Change</label><strong id="change-amount" class="total">—</strong><div id="received-hint" class="muted small"></div></div>
+      </div></div>
+      <div class="sale-summary" aria-label="Sale totals">
+        <div><span>Subtotal (excl. tax)</span><strong id="cart-subtotal">—</strong></div>
+        <div><span>Tax</span><strong id="cart-tax">—</strong></div>
+        <div><span>Total</span><strong id="cart-total" class="sale-summary-total">—</strong></div>
+      </div>
+      <div class="form-grid sale-detail-grid" style="margin-top:8px">
+        <div><label>Held sale</label><select id="held-sale-select"><option value="">Select a held sale</option></select></div>
+        <div class="toolbar" style="align-self:end"><button id="load-held-sale" class="btn secondary">Load held</button><button id="manage-customers" class="btn secondary">Customers</button></div>
+      </div>
+      <label class="toolbar" style="margin-top:8px"><input id="fiscalize-now" type="checkbox"> Fiscalise invoice now</label>
+      <div class="sale-actions">
+        <button id="new-sale" class="btn secondary">New sale</button>
+        <button id="hold-sale" class="btn secondary">Hold sale</button>
+        <button id="void-sale" class="btn danger">Void sale</button>
+        <button id="complete-sale" class="btn">Complete &amp; print</button>
+      </div></div>
+      <div class="card"><div class="product-search-wrap"><label for="product-search">Search product or scan barcode / SKU</label>
+        <input id="product-search" type="search" autocomplete="off" placeholder="Type a product name, SKU or barcode">
+        <div id="product-dropdown" class="product-dropdown hidden" role="listbox"></div></div>
+      <h2>Current sale</h2><div class="table-wrap"><table class="cart-table"><thead><tr><th>Product</th><th>Price</th><th>Qty</th><th>Tax</th><th>Amount</th><th></th></tr></thead>
+      <tbody id="cart-lines"></tbody></table></div>
+      </div></div>`;
+    $("sale-customer").value=saleDraft.customer_id || "";
+    $("invoice-format").value=saleDraft.invoice_format;
+    $("payment-type").value=saleDraft.payment_type;
+    $("fiscalize-now").checked=Boolean(saleDraft.fiscalize);
+    $("amount-received").value=saleDraft.amount_received;
+    $("sale-currency").onchange = () => { rememberSaleOptions(); renderSale(); };
+    ["sale-customer","invoice-format","payment-type","fiscalize-now"].forEach(id=>{
+      $(id).onchange=()=>{ rememberSaleOptions(); updatePaymentFields(); };
+    });
+    $("amount-received").oninput=()=>{ rememberSaleOptions(); updateChange(); };
+    $("product-search").oninput = () => renderProductDropdown();
+    $("product-search").onkeydown = event => {
+      if(event.key==="ArrowDown") {
+        $("product-dropdown").querySelector("[data-product]")?.focus();
+        return;
+      }
+      if(event.key!=="Enter") return;
+      event.preventDefault();
+      const code=$("product-search").value.trim().toLowerCase();
+      if(!code) return;
+      const match=catalog.products.find(p=>p.sku.toLowerCase()===code) ||
+        catalog.products.find(p=>`${p.name} ${p.sku}`.toLowerCase().includes(code));
+      if(match) addProductToCart(match);
+      else if(event.key==="Enter") showNotice("No product matches that search.",true);
+    };
+    $("product-dropdown").onmousedown=event=>event.preventDefault();
+    $("product-dropdown").onclick=event=>{
+      const button=event.target.closest("[data-product]");
+      if(button) addProductToCart(catalog.products.find(p=>p.id===Number(button.dataset.product)));
+    };
+    $("product-search").onblur=()=>setTimeout(()=>$("product-dropdown")?.classList.add("hidden"),150);
+    $("product-search").onfocus=()=>renderProductDropdown();
+    updateCart();
+    updatePaymentFields();
+    loadHeldSaleOptions();
+    $("complete-sale").onclick = completeSale;
+    $("new-sale").onclick = () => resetSale("Start a new sale? The current cart will be cleared.");
+    $("void-sale").onclick = () => resetSale("Void this sale and clear the current cart?");
+    $("hold-sale").onclick = holdSale;
+    $("load-held-sale").onclick = loadHeldSale;
+    $("manage-customers").onclick=()=>{ activeTab="customers"; renderTabs(); render(); };
+  }
+  function addProductToCart(product) {
+    if(!product) return;
+    const current=cart.get(product.id)||{product,quantity:0};
+    current.quantity+=1; cart.set(product.id,current);
+    $("product-search").value=""; $("product-dropdown").classList.add("hidden");
+    showNotice(""); updateCart(); $("product-search").focus();
+  }
+  function renderProductDropdown() {
+    const query=$("product-search").value.trim().toLowerCase();
+    const target=$("product-dropdown");
+    if(!target) return;
+    const matches=query ? catalog.products.filter(p=>`${p.name} ${p.sku}`.toLowerCase().includes(query)).slice(0,12) : [];
+    target.innerHTML=matches.map(p=>`<button type="button" class="product-option" role="option" data-product="${p.id}">
+      <span><strong>${esc(p.name)}</strong><span class="muted small" style="display:block">${esc(p.sku)} · ${p.track_stock?`Stock ${Number(p.stock_qty)}`:"Service"}</span></span>
+      <span>${money(priceInCurrency(p,$("sale-currency").value),$("sale-currency").value)}<span class="muted small" style="display:block">Tax ${Number(p.tax_percent)}%</span></span>
+    </button>`).join("") || (query ? `<div class="muted" style="padding:12px">No products match this search.</div>` : "");
+    target.classList.toggle("hidden",!query);
+  }
+  function updatePaymentFields() {
+    const isCash=$("payment-type").value==="Cash";
+    $("cash-details").classList.toggle("hidden",!isCash);
+    updateChange();
+  }
+  function updateProducts() {
+    renderProductDropdown();
+  }
+  function updateCart() {
+    if (!$("cart-lines")) return;
+    const entries = [...cart.values()];
+    const currency=$("sale-currency").value;
+    $("cart-lines").innerHTML = entries.length ? entries.map(({product,quantity})=>{
+      const price=priceInCurrency(product,currency);
+      const amount=Math.round(price*quantity*100)/100;
+      const tax=product.tax_percent ? Math.round(amount*product.tax_percent/(100+product.tax_percent)*100)/100 : 0;
+      return `<tr><td>${esc(product.name)}<div class="muted small">${esc(product.sku)}</div></td><td>${money(price,currency)}</td>
+      <td><input aria-label="Quantity for ${esc(product.name)}" type="number" min="0.001" step="0.001" value="${quantity}" data-qty="${product.id}"></td>
+      <td>${money(tax,currency)}<div class="muted small">${Number(product.tax_percent)}%</div></td>
+      <td>${money(amount,currency)}</td><td><button class="btn danger smallbtn" data-remove="${product.id}" aria-label="Remove ${esc(product.name)}">×</button></td></tr>`;
+    }).join("") : `<tr><td colspan="6" class="muted">Add products to start a sale.</td></tr>`;
+    let total=0,tax=0;
+    for (const {product,quantity} of entries) {
+      const lineTotal=Math.round(priceInCurrency(product,$("sale-currency").value)*quantity*100)/100;
+      total+=lineTotal; tax+=product.tax_percent ? Math.round(lineTotal*product.tax_percent/(100+product.tax_percent)*100)/100 : 0;
+    }
+    $("cart-subtotal").textContent=money(total-tax,currency); $("cart-tax").textContent=money(tax,currency);
+    $("cart-total").textContent=money(total,currency);
+    $("cart-lines").querySelectorAll("[data-qty]").forEach(input => input.onchange=()=>{
+      const id=Number(input.dataset.qty), quantity=Number(input.value);
+      if (!Number.isFinite(quantity)||quantity<=0) cart.delete(id); else cart.get(id).quantity=quantity;
+      updateCart();
+    });
+    $("cart-lines").querySelectorAll("[data-remove]").forEach(button=>button.onclick=()=>{
+      cart.delete(Number(button.dataset.remove)); updateCart();
+    });
+    updateChange();
+  }
+  async function completeSale() {
+    const button=$("complete-sale"); button.disabled=true; showNotice("");
+    try {
+      if (!cart.size) throw new Error("Add at least one product.");
+      rememberSaleOptions();
+      const paymentType=$("payment-type").value;
+      const received=paymentType==="Cash" ? Number($("amount-received").value || 0) : cartTotal();
+      if(paymentType==="Cash" && received<cartTotal()) throw new Error("Amount received is less than the sale total.");
+      const result=await call("/sell",{method:"POST",body:JSON.stringify({
+        lines:[...cart.values()].map(({product,quantity})=>({product_id:product.id,quantity})),
+        currency:$("sale-currency").value, payment_type:paymentType, amount_received:received,
+        customer_id:$("sale-customer").value || null,
+        invoice_format:$("invoice-format").value, fiscalize:$("fiscalize-now").checked,
+        held_sale_id:currentHeldSaleId
+      })});
+      cart.clear(); currentHeldSaleId=null; saleDraft={currency:catalog.base_currency,customer_id:"",invoice_format:"InvoiceA4",payment_type:"Cash",amount_received:"",fiscalize:false}; await refreshCatalog();
+      const status=result.fiscal_status==="fiscalized"?"Fiscalised successfully.":result.fiscal_status==="failed"?`Sale saved; fiscalisation failed: ${result.fiscal_error}`:"Saved as a non-fiscal invoice.";
+      const changeMessage=paymentType==="Cash"?` Change due: ${money(result.change_due,result.currency)}.`:"";
+      try {
+        const printed=await call(`/invoices/${result.id}/print`,{method:"POST",body:"{}"});
+        showNotice(`${result.invoice_no}: ${status}${changeMessage} Printed to ${printed.printer} (job ${printed.job_id ?? "queued"}).`);
+      } catch(printError) {
+        showNotice(`${result.invoice_no}: ${status}${changeMessage} PDF available in invoice history. Printing failed: ${printError.message}`,true);
+      }
+      renderSale();
+    } catch(error) { showNotice(error.message,true); button.disabled=false; }
+  }
+  async function holdSale() {
+    try {
+      if(!cart.size) throw new Error("Add at least one product before holding a sale.");
+      rememberSaleOptions();
+      const result=await call("/held-sales",{method:"POST",body:JSON.stringify({
+        lines:[...cart.values()].map(({product,quantity})=>({product_id:product.id,quantity})),
+        currency:$("sale-currency").value, customer_id:$("sale-customer").value||null,
+        invoice_format:$("invoice-format").value,payment_type:$("payment-type").value,
+        amount_received:$("amount-received").value,
+        fiscalize:$("fiscalize-now").checked
+      })});
+      if(currentHeldSaleId) await call(`/held-sales/${currentHeldSaleId}`,{method:"DELETE"});
+      cart.clear(); currentHeldSaleId=null;
+      showNotice(`Sale held (${result.id}) and can be resumed later.`);
+      await refreshCatalog(); await renderSale();
+    } catch(error) { showNotice(error.message,true); }
+  }
+  async function loadHeldSaleOptions() {
+    try {
+      const held=await call("/held-sales");
+      const select=$("held-sale-select");
+      if(select) select.innerHTML=`<option value="">Select a held sale</option>${held.map(s=>
+        `<option value="${s.id}">${esc(s.created_at)} · ${esc(s.cashier_name)} · ${esc(s.customer_name||"Walk-in")} · ${s.line_count} items</option>`
+      ).join("")}`;
+    } catch(error) { showNotice(error.message,true); }
+  }
+  async function loadHeldSale() {
+    try {
+      const id=$("held-sale-select").value;
+      if(!id) throw new Error("Select a held sale to load.");
+      if(cart.size && !confirm("Replace the current cart with the held sale?")) return;
+      const held=await call(`/held-sales/${id}`);
+      cart.clear();
+      for(const line of held.lines) {
+        const product=catalog.products.find(item=>item.id===line.product_id);
+        if(!product) throw new Error("A product in this held sale is unavailable.");
+        cart.set(product.id,{product,quantity:Number(line.quantity)});
+      }
+      currentHeldSaleId=held.id;
+      saleDraft={currency:held.currency,customer_id:held.customer_id||"",invoice_format:held.invoice_format,
+        payment_type:held.payment_type,amount_received:held.amount_received||"",fiscalize:Boolean(held.fiscalize)};
+      await renderSale(); showNotice("Held sale loaded.");
+    } catch(error) { showNotice(error.message,true); }
+  }
+  async function resetSale(message) {
+    if(cart.size && !confirm(message)) return;
+    if(currentHeldSaleId) {
+      try { await call(`/held-sales/${currentHeldSaleId}`,{method:"DELETE"}); }
+      catch(error) { showNotice(`Could not remove held sale: ${error.message}`,true); return; }
+    }
+    cart.clear(); currentHeldSaleId=null;
+    saleDraft={currency:catalog.base_currency,customer_id:"",invoice_format:"InvoiceA4",payment_type:"Cash",amount_received:"",fiscalize:false};
+    showNotice(message.startsWith("Void")?"Sale voided.":"New sale started.");
+    renderSale();
+  }
+  async function refreshCatalog() { catalog=await call("/catalog"); }
+  async function openInvoicePdf(invoiceId) {
+    const pdfWindow=window.open("about:blank","_blank");
+    if(!pdfWindow) { showNotice("Allow pop-ups to open the invoice PDF.",true); return; }
+    try {
+      const response=await fetch(`${api}/invoices/${invoiceId}/print`,{headers:{"X-POS-Session":token}});
+      if(!response.ok) {
+        const error=await response.json().catch(()=>({}));
+        throw new Error(error.error||`Could not load PDF (${response.status}).`);
+      }
+      const url=URL.createObjectURL(await response.blob());
+      pdfWindow.location=url;
+      setTimeout(()=>URL.revokeObjectURL(url),60000);
+    } catch(error) {
+      pdfWindow.close(); showNotice(error.message,true);
+    }
+  }
+  async function renderInvoices() {
+    const rows=await call("/invoices");
+    $("screen").innerHTML=`<div class="card"><div class="toolbar" style="justify-content:space-between"><h2>Invoice history</h2><span class="muted">${rows.length} most recent invoices</span></div>
+    <div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Date</th><th>Customer</th><th>Cashier</th><th>Total</th><th>Fiscal status</th><th>Actions</th></tr></thead><tbody>
+    ${rows.map(i=>`<tr><td>${i.document_type==="credit_note"?"Credit note":"Invoice"} · ${esc(i.invoice_no)}</td><td>${esc(i.created_at)}</td><td>${esc(i.customer_name||"Walk-in")}</td><td>${esc(i.cashier_name)}</td><td>${money(i.total,i.currency)}</td>
+    <td><span class="badge ${esc(i.fiscal_status)}">${esc(i.fiscal_status)}</span>${i.fiscal_error?`<div class="muted small">${esc(i.fiscal_error)}</div>`:""}</td>
+    <td><div class="toolbar"><button class="btn secondary smallbtn" data-print="${i.id}">Print</button><button class="btn secondary smallbtn" data-pdf="${i.id}">PDF</button>
+    ${i.fiscal_status!=="fiscalized"&&cashier.role==="manager"?`<button class="btn smallbtn" data-fiscal="${i.id}">Fiscalise</button>`:""}
+    ${i.document_type==="invoice"&&i.fiscal_status==="fiscalized"&&cashier.role==="manager"?`<button class="btn danger smallbtn" data-credit="${i.id}">Credit note</button>`:""}
+    ${i.verification_code?`<span class="badge">${esc(i.verification_code)}</span>`:""}</div></td></tr>`).join("")}
+    </tbody></table></div></div>`;
+    $("screen").querySelectorAll("[data-print]").forEach(b=>b.onclick=async()=>{
+      b.disabled=true;
+      try { const result=await call(`/invoices/${b.dataset.print}/print`,{method:"POST",body:"{}"}); showNotice(`Printed to ${result.printer} (job ${result.job_id ?? "queued"}).`); }
+      catch(error) { showNotice(error.message,true); }
+      finally { b.disabled=false; }
+    });
+    $("screen").querySelectorAll("[data-pdf]").forEach(b=>b.onclick=()=>openInvoicePdf(b.dataset.pdf));
+    $("screen").querySelectorAll("[data-credit]").forEach(b=>b.onclick=()=>renderCreditNote(Number(b.dataset.credit)));
+    $("screen").querySelectorAll("[data-fiscal]").forEach(b=>b.onclick=async()=>{
+      b.disabled=true;
+      try { await call(`/invoices/${b.dataset.fiscal}/fiscalize`,{method:"POST",body:"{}"}); showNotice("Invoice fiscalised successfully."); await renderInvoices(); }
+      catch(e) { showNotice(e.message,true); await renderInvoices(); }
+    });
+  }
+  async function renderProducts() {
+    await refreshCatalog();
+    const isManager=cashier.role==="manager";
+    const rows=catalog.products;
+    $("screen").innerHTML=`<div class="stat-row"><div class="stat"><span class="muted">Active products</span><b>${rows.length}</b></div>
+      <div class="stat"><span class="muted">Low stock</span><b>${rows.filter(p=>p.track_stock&&p.stock_qty<=p.low_stock_threshold).length}</b></div></div>
+      ${isManager?`<div class="card" style="margin-bottom:14px"><h2 id="product-form-title">Add product</h2>
+      <div class="form-grid"><div><label>SKU / barcode</label><input id="p-sku"></div><div><label>Product name</label><input id="p-name"></div>
+      <div><label>Unit price (${esc(catalog.base_currency)} base price)</label><input id="p-price" type="number" min="0.01" step="0.01"></div>
+      <div><label>Tax rate (%)</label><input id="p-tax" type="number" min="0" step="0.01" value="15.5"></div>
+      <div><label>Tax code</label><input id="p-tax-code" value="A"></div><div><label>HS code (4 or 8 digits)</label><input id="p-hs" value="10000000"></div>
+      <div><label>Opening stock</label><input id="p-stock" type="number" min="0" step="0.001" value="0"></div>
+      <div><label>Low-stock alert at</label><input id="p-low" type="number" min="0" step="0.001" value="5"></div>
+      <div><label class="toolbar"><input id="p-track" type="checkbox" checked> Track stock</label></div></div>
+      <button id="add-product" class="btn" style="margin-top:12px">Save product</button>
+      <button id="cancel-product-edit" class="btn secondary hidden" style="margin-top:12px">Cancel edit</button></div>`:""}
+      <div class="card"><h2>Product inventory &amp; movement</h2><div class="table-wrap"><table><thead><tr><th>SKU</th><th>Product</th><th>Price</th><th>Tax</th><th>On hand</th><th>Stock adjustment</th><th></th></tr></thead><tbody>
+      ${rows.map(p=>`<tr><td>${esc(p.sku)}</td><td>${esc(p.name)}</td><td>${money(p.price,catalog.base_currency)}</td><td>${Number(p.tax_percent)}%</td>
+      <td>${p.track_stock?Number(p.stock_qty):"Not tracked"}</td><td>${isManager&&p.track_stock?`<input type="number" step="0.001" id="adj-${p.id}" placeholder="+/- qty" style="width:105px">`:"—"}</td>
+      <td>${isManager?`<button class="btn secondary smallbtn" data-edit="${p.id}">Edit</button> ${p.track_stock?`<button class="btn secondary smallbtn" data-adjust="${p.id}">Adjust</button>`:""} <button class="btn danger smallbtn" data-deactivate="${p.id}">Archive</button>`:""}</td></tr>`).join("")}
+      </tbody></table></div><h2 style="margin-top:20px">Recent stock movement</h2><div id="stock-history" class="table-wrap"></div></div>`;
+    if (isManager) $("add-product").onclick=async()=>{
+      try {
+        const values={sku:$("p-sku").value,name:$("p-name").value,price:$("p-price").value,currency:catalog.base_currency,
+          tax_percent:$("p-tax").value,tax_code:$("p-tax-code").value,hs_code:$("p-hs").value,stock_qty:$("p-stock").value,
+          low_stock_threshold:$("p-low").value,track_stock:$("p-track").checked};
+        if(editingProduct) await call(`/products/${editingProduct}`,{method:"PUT",body:JSON.stringify(values)});
+        else await call("/products",{method:"POST",body:JSON.stringify(values)});
+        editingProduct=null; showNotice("Product saved."); await renderProducts();
+      } catch(e) { showNotice(e.message,true); }
+    };
+    if(isManager) $("p-tax").onchange=()=>{
+      if(Number($("p-tax").value)===0 && $("p-tax-code").value==="A") $("p-tax-code").value="B";
+    };
+    if(isManager) $("cancel-product-edit").onclick=()=>{ editingProduct=null; renderProducts(); };
+    $("screen").querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>{
+      const p=catalog.products.find(item=>item.id===Number(b.dataset.edit));
+      if(!p) return;
+      editingProduct=p.id; $("product-form-title").textContent=`Edit ${p.name}`;
+      $("p-sku").value=p.sku; $("p-name").value=p.name; $("p-price").value=p.price;
+      $("p-tax").value=p.tax_percent; $("p-tax-code").value=p.tax_code;
+      $("p-hs").value=p.hs_code; $("p-low").value=p.low_stock_threshold; $("p-track").checked=Boolean(p.track_stock);
+      $("add-product").textContent="Update product"; $("cancel-product-edit").classList.remove("hidden");
+      $("product-form-title").scrollIntoView({behavior:"smooth",block:"center"});
+    });
+    $("screen").querySelectorAll("[data-adjust]").forEach(b=>b.onclick=async()=>{
+      try { await call("/stock",{method:"POST",body:JSON.stringify({product_id:Number(b.dataset.adjust),quantity_delta:$(`adj-${b.dataset.adjust}`).value,note:"Manual stock adjustment"})}); showNotice("Stock adjusted."); await renderProducts(); }
+      catch(e) { showNotice(e.message,true); }
+    });
+    $("screen").querySelectorAll("[data-deactivate]").forEach(b=>b.onclick=async()=>{
+      if(!confirm("Archive this product? It will remain in invoice history.")) return;
+      try { await call(`/products/${b.dataset.deactivate}`,{method:"DELETE"}); showNotice("Product archived."); await renderProducts(); }
+      catch(e) { showNotice(e.message,true); }
+    });
+    const movements=await call("/stock-movements");
+    $("stock-history").innerHTML=`<table><thead><tr><th>Date</th><th>Product</th><th>Movement</th><th>Qty</th><th>Cashier</th><th>Note / invoice</th></tr></thead><tbody>
+      ${movements.map(m=>`<tr><td>${esc(m.created_at)}</td><td>${esc(m.sku)} · ${esc(m.product_name)}</td><td>${esc(m.movement_type)}</td><td>${Number(m.quantity_delta)}</td><td>${esc(m.cashier_name)}</td><td>${esc(m.note)}</td></tr>`).join("")}</tbody></table>`;
+  }
+  async function renderCustomers() {
+    const customers=await call("/customers");
+    const customerForm=`<div class="card" style="margin-bottom:14px"><h2 id="customer-form-title">Add customer</h2>
+      <div class="form-grid"><div><label>Name</label><input id="customer-name"></div><div><label>TIN</label><input id="customer-tin"></div>
+      <div><label>VAT number</label><input id="customer-vat"></div><div><label>Phone</label><input id="customer-phone" type="tel"></div>
+      <div><label>Email</label><input id="customer-email" type="email"></div><div><label>Address</label><input id="customer-address"></div></div>
+      <button id="save-customer" class="btn" style="margin-top:12px">Save customer</button>
+      <button id="cancel-customer" class="btn secondary hidden" style="margin-top:12px">Cancel edit</button></div>`;
+    $("screen").innerHTML=`${customerForm}<div class="card"><h2>Customer directory</h2><div class="table-wrap">
+      <table><thead><tr><th>Name</th><th>TIN</th><th>VAT</th><th>Address</th><th>Phone</th><th>Email</th><th></th></tr></thead><tbody>
+      ${customers.map(c=>`<tr><td>${esc(c.name)}</td><td>${esc(c.tin)}</td><td>${esc(c.vat_number)}</td><td>${esc(c.address)}</td>
+      <td>${esc(c.phone)}</td><td>${esc(c.email)}</td><td><button class="btn secondary smallbtn" data-customer-edit="${c.id}">Edit</button></td></tr>`).join("")}
+      </tbody></table></div></div>`;
+    const reset=()=>{ editingCustomer=null; $("customer-form-title").textContent="Add customer"; $("save-customer").textContent="Save customer";
+      ["name","tin","vat","address","phone","email"].forEach(key=>$(`customer-${key}`).value=""); $("cancel-customer").classList.add("hidden"); };
+    $("save-customer").onclick=async()=>{
+      const value={name:$("customer-name").value,tin:$("customer-tin").value,vat_number:$("customer-vat").value,
+        address:$("customer-address").value,phone:$("customer-phone").value,email:$("customer-email").value};
+      try {
+        await call(editingCustomer?`/customers/${editingCustomer}`:"/customers",
+          {method:editingCustomer?"PUT":"POST",body:JSON.stringify(value)});
+        showNotice(editingCustomer?"Customer updated.":"Customer added."); reset(); await renderCustomers();
+      } catch(error) { showNotice(error.message,true); }
+    };
+    $("cancel-customer").onclick=reset;
+    $("screen").querySelectorAll("[data-customer-edit]").forEach(button=>button.onclick=()=>{
+      const c=customers.find(item=>item.id===Number(button.dataset.customerEdit));
+      if(!c) return;
+      editingCustomer=c.id; $("customer-form-title").textContent=`Edit ${c.name}`; $("save-customer").textContent="Update customer";
+      $("customer-name").value=c.name; $("customer-tin").value=c.tin; $("customer-vat").value=c.vat_number;
+      $("customer-address").value=c.address; $("customer-phone").value=c.phone; $("customer-email").value=c.email;
+      $("cancel-customer").classList.remove("hidden");
+      $("customer-form-title").scrollIntoView({behavior:"smooth",block:"center"});
+    });
+  }
+  async function renderCreditNote(invoiceId) {
+    const invoice=await call(`/invoices/${invoiceId}`);
+    $("screen").innerHTML=`<div class="card"><div class="toolbar" style="justify-content:space-between"><div><h2>Create credit note</h2>
+      <div class="muted">Original invoice ${esc(invoice.invoice_no)} · ${money(invoice.total,invoice.currency)}</div></div>
+      <button id="cancel-credit" class="btn secondary">Back to invoice history</button></div>
+      <div class="table-wrap"><table><thead><tr><th>Product</th><th>Sold</th><th>Already credited</th><th>Available to credit</th><th>Credit quantity</th></tr></thead><tbody>
+      ${invoice.lines.map(line=>`<tr><td>${esc(line.name)} · ${esc(line.sku)}</td><td>${Number(line.quantity)}</td><td>${Number(line.credited_quantity)}</td>
+      <td>${Number(line.remaining_quantity)}</td><td><input data-credit-line="${line.id}" type="number" min="0" max="${Number(line.remaining_quantity)}" step="0.001" value="0" ${line.remaining_quantity<=0?"disabled":""}></td></tr>`).join("")}
+      </tbody></table></div><label class="toolbar" style="margin-top:14px"><input id="credit-fiscalize" type="checkbox" checked> Fiscalise credit note with ZIMRA now</label>
+      <button id="submit-credit" class="btn danger">Create credit note</button></div>`;
+    $("cancel-credit").onclick=()=>{activeTab="invoices";renderTabs();renderInvoices();};
+    $("submit-credit").onclick=async()=>{
+      const lines=[...$("screen").querySelectorAll("[data-credit-line]")].map(input=>({
+        line_id:Number(input.dataset.creditLine),quantity:Number(input.value)
+      })).filter(line=>line.quantity>0);
+      if(!lines.length) { showNotice("Enter a quantity to credit."); return; }
+      const button=$("submit-credit"); button.disabled=true;
+      try {
+        const credit=await call(`/invoices/${invoiceId}/credit-note`,{method:"POST",
+          body:JSON.stringify({lines,fiscalize:$("credit-fiscalize").checked})});
+        let message=`Credit note ${credit.invoice_no} created for ${money(credit.total,credit.currency)}.`;
+        try {
+          const print=await call(`/invoices/${credit.id}/print`,{method:"POST",body:"{}"});
+          message+=` Printed to ${print.printer}.`;
+        } catch(error) { message+=` Printing failed: ${error.message}`; }
+        showNotice(message); activeTab="invoices"; renderTabs(); await renderInvoices();
+      } catch(error) { showNotice(error.message,true); button.disabled=false; }
+    };
+  }
+  async function renderAnalysis() {
+    const today=new Date(), startDefault=new Date(today); startDefault.setDate(today.getDate()-29);
+    const asDate=date=>`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
+    $("screen").innerHTML=`<div class="card" style="margin-bottom:14px"><div class="form-grid">
+      <div><label>From</label><input id="analysis-start" type="date" value="${asDate(startDefault)}"></div>
+      <div><label>To</label><input id="analysis-end" type="date" value="${asDate(today)}"></div>
+      <div class="toolbar" style="align-self:end"><button id="analysis-refresh" class="btn">Run analysis</button></div></div></div>
+      <div id="analysis-results"></div>`;
+    const update=async()=>{
+      try {
+        const data=await call(`/analysis?start=${encodeURIComponent($("analysis-start").value)}&end=${encodeURIComponent($("analysis-end").value)}`);
+        const t=data.totals;
+        const maxDay=Math.max(1,...data.sales_by_day.map(row=>Math.abs(row.base_net_sales)));
+        $("analysis-results").innerHTML=`<div class="stat-row">
+          <div class="stat"><span class="muted">Gross sales</span><b>${money(t.base_gross_sales,data.base_currency)}</b></div>
+          <div class="stat"><span class="muted">Credit notes</span><b>${money(t.base_credits,data.base_currency)}</b></div>
+          <div class="stat"><span class="muted">Net sales</span><b>${money(t.base_net_sales,data.base_currency)}</b></div>
+          <div class="stat"><span class="muted">Net tax</span><b>${money(t.base_net_tax,data.base_currency)}</b></div>
+          <div class="stat"><span class="muted">Invoices / credits</span><b>${t.invoice_count} / ${t.credit_note_count}</b></div>
+          <div class="stat"><span class="muted">Average invoice</span><b>${money(data.average_sale,data.base_currency)}</b></div>
+        </div><div class="grid sale-grid">
+          <div class="card"><h2>Sales by day · ${esc(data.base_currency)}</h2>
+            ${data.sales_by_day.map(day=>`<div style="display:grid;grid-template-columns:94px 1fr 100px;gap:8px;align-items:center;margin:9px 0">
+              <span class="small">${esc(day.day)} ${esc(day.currency)}</span><div style="height:12px;background:#293242;border-radius:8px;overflow:hidden">
+              <div style="height:100%;width:${Math.min(100,Math.abs(day.base_net_sales)/maxDay*100)}%;background:${day.base_net_sales<0?"#fa7184":"#40e0d0"}"></div></div>
+              <span class="small">${money(day.base_net_sales,data.base_currency)}</span></div>`).join("")||`<p class="muted">No sales in this period.</p>`}
+          </div>          <div class="card"><h2>Payment method totals</h2><div class="table-wrap"><table><thead><tr><th>Method</th><th>Currency</th><th>Total</th></tr></thead><tbody>
+            ${Object.entries(data.payments_by_type).flatMap(([type,values])=>Object.entries(values).map(([currency,amount])=>
+              `<tr><td>${esc(type)}</td><td>${esc(currency)}</td><td>${money(amount,currency)}</td></tr>`)).join("")}</tbody></table></div></div>
+        </div><div class="card" style="margin-top:14px"><h2>Product sales (net of credits)</h2><div class="table-wrap"><table>
+          <thead><tr><th>SKU</th><th>Product</th><th>Currency</th><th>Net quantity</th><th>Net sales</th></tr></thead><tbody>
+          ${data.top_products.map(p=>`<tr><td>${esc(p.sku)}</td><td>${esc(p.name)}</td><td>${esc(p.currency)}</td><td>${Number(p.net_quantity)}</td><td>${money(p.net_sales,p.currency)}</td></tr>`).join("")}
+          </tbody></table></div></div><div class="card" style="margin-top:14px"><h2>Sales by currency</h2><div class="table-wrap"><table>
+          <thead><tr><th>Currency</th><th>Gross sales</th><th>Credits</th><th>Net sales</th><th>Tax</th></tr></thead><tbody>
+          ${Object.entries(data.by_currency).map(([currency,value])=>`<tr><td>${esc(currency)}</td><td>${money(value.gross_sales,currency)}</td>
+            <td>${money(value.credits,currency)}</td><td>${money(value.net_sales,currency)}</td><td>${money(value.net_tax,currency)}</td></tr>`).join("")}</tbody></table></div></div>`;
+      } catch(error) { $("analysis-results").innerHTML=`<div class="notice error">${esc(error.message)}</div>`; }
+    };
+    $("analysis-refresh").onclick=update; await update();
+  }
+  async function renderCashbook() {
+    const data=await call("/cashbook");
+    const debitEntries=data.entries.filter(m=>["SALE","IN"].includes(m.movement_type)).reverse();
+    const creditEntries=data.entries.filter(m=>m.movement_type==="OUT").reverse();
+    const debitTotals=Object.fromEntries(data.balances.map(b=>[b.currency,Number(b.cash_in)]));
+    const creditTotals=Object.fromEntries(data.balances.map(b=>[b.currency,Number(b.cash_out)]));
+    const positiveBalances=Object.fromEntries(data.balances.filter(b=>Number(b.balance)>0).map(b=>[b.currency,Number(b.balance)]));
+    const negativeBalances=Object.fromEntries(data.balances.filter(b=>Number(b.balance)<0).map(b=>[b.currency,Math.abs(Number(b.balance))]));
+    const currencies=new Set([...Object.keys(debitTotals),...Object.keys(creditTotals)]);
+    const totalByCurrency=Object.fromEntries([...currencies].map(currency=>[
+      currency,Math.max(debitTotals[currency]||0,creditTotals[currency]||0)
+    ]));
+    const totalMarkup=totals=>Object.entries(totals).map(([currency,amount])=>
+      `${esc(currency)} ${Number(amount).toFixed(2)}`).join("<br>")||"—";
+    const cashbookRows=Array.from({length:Math.max(debitEntries.length,creditEntries.length)},(_,index)=>{
+      const debit=debitEntries[index], credit=creditEntries[index];
+      const sideCells=(entry,side)=>entry?`
+        <td>${esc(entry.created_at)}</td>
+        <td class="cash-particulars">${esc(entry.note|| (entry.invoice_no?`Sale ${entry.invoice_no}`:"Cash movement"))}
+          <div class="muted small">${esc(entry.cashier_name)}</div></td>
+        <td>${esc(entry.invoice_no||"—")}</td>
+        <td class="amount-cell">${money(entry.amount,entry.currency)}</td>`
+        :`<td>—</td><td>—</td><td>—</td><td class="amount-cell">—</td>`;
+      return `<tr>${sideCells(debit,"debit")}${sideCells(credit,"credit")}</tr>`;
+    }).join("");
+    $("screen").innerHTML=`<div class="stat-row"><div class="stat"><span class="muted">Net cash balance · ${esc(data.base_currency)}</span><b>${money(data.base_balance.balance,data.base_currency)}</b>
+    <span class="small muted">In ${money(data.base_balance.cash_in,data.base_currency)} · Out ${money(data.base_balance.cash_out,data.base_currency)}</span></div>
+    ${data.balances.map(b=>`<div class="stat"><span class="muted">${esc(b.currency)} cash balance</span><b>${money(b.balance,b.currency)}</b><span class="small muted">In ${money(b.cash_in,b.currency)} · Out ${money(b.cash_out,b.currency)}</span></div>`).join("")}</div>
+    ${cashier.role==="manager"?`<div class="card" style="margin-bottom:14px"><h2>Record cash movement</h2><div class="form-grid">
+    <div><label>Direction</label><select id="cash-direction"><option value="IN">Cash received (Debit)</option><option value="OUT">Cash paid (Credit)</option></select></div>
+    <div><label>Amount</label><input id="cash-amount" type="number" min="0.01" step="0.01"></div>
+    <div><label>Currency</label><select id="cash-currency">${currencyOptions(data.base_currency)}</select></div>
+    <div><label>Reason</label><input id="cash-note" placeholder="Opening float, expense, deposit..."></div></div>
+    <button id="cash-save" class="btn" style="margin-top:12px">Record movement</button></div>`:""}
+    <div class="card"><h2>Cash book</h2><p class="muted small">Receipts are recorded on the debit side; cash payments are recorded on the credit side. The table shows the latest 500 entries; totals and balances include all recorded entries.</p>
+    <div class="table-wrap"><table class="cashbook-table"><thead>
+      <tr><th class="side-heading debit-heading" colspan="4">Debit · Receipts</th><th class="side-heading credit-heading" colspan="4">Credit · Payments</th></tr>
+      <tr><th>Date</th><th>Particulars</th><th>Ref.</th><th>Amount</th><th>Date</th><th>Particulars</th><th>Ref.</th><th>Amount</th></tr>
+      </thead><tbody>${cashbookRows||`<tr><td colspan="8" class="muted">No cashbook entries recorded.</td></tr>`}
+      <tr class="side-total"><td colspan="3">Total receipts</td><td class="amount-cell debit-total">${totalMarkup(debitTotals)}</td>
+          <td colspan="3">Total payments</td><td class="amount-cell credit-total">${totalMarkup(creditTotals)}</td></tr>
+      <tr class="side-total"><td colspan="3">Balance c/d</td><td class="amount-cell debit-total">${totalMarkup(negativeBalances)}</td>
+          <td colspan="3">Balance c/d</td><td class="amount-cell credit-total">${totalMarkup(positiveBalances)}</td></tr>
+      <tr class="side-grand-total"><td colspan="3">Total</td><td class="amount-cell">${totalMarkup(totalByCurrency)}</td>
+          <td colspan="3">Total</td><td class="amount-cell">${totalMarkup(totalByCurrency)}</td></tr>
+      </tbody></table></div></div>`;
+    if(cashier.role==="manager") $("cash-save").onclick=async()=>{
+      try { await call("/cashbook",{method:"POST",body:JSON.stringify({movement_type:$("cash-direction").value,amount:$("cash-amount").value,currency:$("cash-currency").value,note:$("cash-note").value})}); showNotice("Cash movement recorded."); await renderCashbook(); }
+      catch(e) { showNotice(e.message,true); }
+    };
+  }
+  async function renderCashiers() {
+    const rows=await call("/cashiers");
+    $("screen").innerHTML=`<div class="card"><h2>Add cashier account</h2><div class="form-grid">
+    <div><label>Display name</label><input id="c-name"></div><div><label>Username</label><input id="c-user"></div>
+    <div><label>PIN (4–12 digits)</label><input id="c-pin" inputmode="numeric" type="password"></div>
+    <div><label>Role</label><select id="c-role"><option value="cashier">Cashier</option><option value="manager">Manager</option></select></div></div>
+    <button id="add-cashier" class="btn" style="margin-top:12px">Create account</button></div>
+    <div class="card" style="margin-top:14px"><h2>Cashiers</h2><div class="table-wrap"><table><thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Status</th></tr></thead><tbody>
+    ${rows.map(c=>`<tr><td>${esc(c.display_name)}</td><td>${esc(c.username)}</td><td>${esc(c.role)}</td><td>${c.active?"Active":"Inactive"}</td></tr>`).join("")}</tbody></table></div></div>`;
+    $("add-cashier").onclick=async()=>{
+      try { await call("/cashiers",{method:"POST",body:JSON.stringify({display_name:$("c-name").value,username:$("c-user").value,pin:$("c-pin").value,role:$("c-role").value})}); showNotice("Cashier account created."); await renderCashiers(); }
+      catch(e) { showNotice(e.message,true); }
+    };
+  }
+  async function renderAuditLog(loadOlder=false) {
+    if(!loadOlder) {
+      auditLogEntries=[]; auditLogBeforeId=null;
+    }
+    const query=new URLSearchParams({limit:"200"});
+    if(auditLogBeforeId) query.set("before_id",auditLogBeforeId);
+    const result=await call(`/audit-log?${query}`);
+    auditLogEntries.push(...result.entries);
+    auditLogHasMore=result.has_more;
+    if(result.entries.length) auditLogBeforeId=result.entries[result.entries.length-1].id;
+    $("screen").innerHTML=`<div class="card"><div class="toolbar" style="justify-content:space-between">
+      <div><h2>POS audit log</h2><p class="muted small">Append-only activity history. Updates and deletion are blocked by the database.</p></div>
+      <span class="badge">${auditLogEntries.length} activities loaded</span></div>
+      <div class="table-wrap"><table class="audit-table"><thead><tr><th>Date / time</th><th>User</th><th>Activity</th><th>Request</th><th>Result</th></tr></thead><tbody>
+      ${auditLogEntries.map(entry=>`<tr><td>${esc(entry.created_at)}</td>
+        <td>${esc(entry.actor_name)}<div class="muted small">${esc(entry.actor_username||"")}</div></td>
+        <td>${esc(entry.action)}${Object.keys(entry.details.route_parameters||{}).length
+          ? `<div class="muted small">${esc(JSON.stringify(entry.details.route_parameters))}</div>`:""}</td>
+        <td><span class="badge">${esc(entry.method)}</span> <span class="small">${esc(entry.path)}</span></td>
+        <td><span class="audit-status ${entry.status_code>=200&&entry.status_code<400?"ok":"failed"}">${Number(entry.status_code)}</span></td></tr>`).join("")}
+      ${auditLogEntries.length?"":`<tr><td colspan="5" class="muted">No POS activities have been recorded.</td></tr>`}
+      </tbody></table></div>
+      ${auditLogHasMore?`<button id="audit-load-older" class="btn secondary" style="margin-top:12px">Load older activities</button>`:""}
+      </div>`;
+    if(auditLogHasMore) $("audit-load-older").onclick=()=>renderAuditLog(true);
+  }
+  async function renderSettings() {
+    settings=await call("/settings");
+    $("screen").innerHTML=`<div class="card"><h2>Currency &amp; exchange rates</h2>
+      <div class="form-grid"><div><label>Base currency for product prices and reports</label><select id="base-select">${currencyOptions(settings.base_currency)}</select></div>
+      ${settings.currencies.filter(c=>c.active).map(c=>`<div><label data-rate-label="${esc(c.code)}">1 ${esc(c.code)} = ? ${esc(settings.base_currency)}</label><input id="rate-${esc(c.code)}" type="number" min="0.000001" step="0.000001" value="${Number(c.rate_to_base)}"></div>`).join("")}
+      </div><p class="muted small">Product prices are stored in the base currency and automatically converted for checkout. Rates are relative to the selected base currency; enter all rates again if you change the base. The selected base rate is always 1.0.</p>
+      <button id="save-settings" class="btn">Save settings</button></div>
+      <div class="card" style="margin-top:14px"><h2>Add a currency</h2><div class="form-grid">
+      <div><label>ISO 4217 code</label><input id="new-currency-code" maxlength="3" placeholder="EUR"></div>
+      <div><label>Currency name</label><input id="new-currency-name" placeholder="Euro"></div>
+      <div><label>Rate to current base currency</label><input id="new-currency-rate" type="number" min="0.000001" step="0.000001"></div>
+      </div><button id="add-currency" class="btn" style="margin-top:12px">Add currency</button></div>`;
+    $("base-select").onchange=()=>{
+      const base=$("base-select").value;
+      document.querySelectorAll("[data-rate-label]").forEach(label=>{
+        label.textContent=`1 ${label.dataset.rateLabel} = ? ${base}`;
+      });
+    };
+    $("add-currency").onclick=async()=>{
+      try {
+        await call("/currencies",{method:"POST",body:JSON.stringify({code:$("new-currency-code").value,name:$("new-currency-name").value,rate_to_base:$("new-currency-rate").value})});
+        await refreshCatalog(); showNotice("Currency added."); await renderSettings();
+      } catch(e) { showNotice(e.message,true); }
+    };
+    $("save-settings").onclick=async()=>{
+      try {
+        const rates={}; settings.currencies.filter(c=>c.active).forEach(c=>rates[c.code]=$(`rate-${c.code}`).value);
+        rates[$("base-select").value]=1;
+        await call("/settings",{method:"PUT",body:JSON.stringify({base_currency:$("base-select").value,rates})});
+        await refreshCatalog(); $("base-currency").textContent=`Base currency: ${catalog.base_currency}`; showNotice("Currency settings saved."); await renderSettings();
+      } catch(e) { showNotice(e.message,true); }
+    };
+  }
+  async function render() {
+    showNotice("");
+    try {
+      if(activeTab==="sale") await renderSale();
+      else if(activeTab==="invoices") await renderInvoices();
+      else if(activeTab==="customers") await renderCustomers();
+      else if(activeTab==="analysis") await renderAnalysis();
+      else if(activeTab==="products") await renderProducts();
+      else if(activeTab==="cashbook") await renderCashbook();
+      else if(activeTab==="cashiers") await renderCashiers();
+      else if(activeTab==="settings") await renderSettings();
+      else if(activeTab==="audit") await renderAuditLog();
+    } catch(e) { showNotice(e.message,true); }
+  }
+  $("logout").onclick=async()=>{ try { await call("/logout",{method:"POST",body:"{}"}); } catch(_) {} token=""; localStorage.removeItem("aibes_pos_token"); activeTab="sale"; bootstrap().catch(showFatal); };
+  if(token) start(); else bootstrap().catch(showFatal);
+})();
+</script>
+</body>
+</html>
